@@ -9,3 +9,6 @@ bun.lockb
 /.svelte-kit/
 /static/
 worker-configuration.d.ts
+
+# Agents
+.agents/

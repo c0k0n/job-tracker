@@ -11,6 +11,7 @@ build/
 
 # Editor and OS files
 .vscode/
+.agents/
 .DS_Store
 Thumbs.db
 
