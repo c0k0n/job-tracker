@@ -9,11 +9,9 @@ import ts from 'typescript-eslint';
 const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 
 export default defineConfig(
-	includeIgnoreFile(gitignorePath,
-		{
-			gitignoreResolution: true
-		}
-	),
+	includeIgnoreFile(gitignorePath, {
+		gitignoreResolution: true
+	}),
 
 	globalIgnores(['.svelte-kit/'], 'Ignore SvelteKit generated files'),
 
