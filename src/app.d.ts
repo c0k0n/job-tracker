@@ -9,6 +9,12 @@ declare global {
 			cf?: IncomingRequestCfProperties;
 		}
 
+		// Extra fields attached to error(...) calls. `code` is optional and lets
+		// routes branch (e.g. 404 vs 500) without parsing the message string.
+		interface Error {
+			code?: string;
+		}
+
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
