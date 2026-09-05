@@ -69,18 +69,6 @@ export function computeKpis(apps: readonly Application[]): KpiCounts {
 }
 
 /**
- * Group applications by stage for the pipeline bar.
- * Returns counts in the canonical stage order (saved → applied → ... → withdrawn).
- */
-export function countByStage(apps: readonly Application[]): Record<string, number> {
-	const counts: Record<string, number> = {};
-	for (const app of apps) {
-		counts[app.stage] = (counts[app.stage] ?? 0) + 1;
-	}
-	return counts;
-}
-
-/**
  * Group applications by status for the status breakdown (when added in a
  * future round). Not used in Round A but defined now so the schema is
  * stable.

@@ -23,6 +23,17 @@ export type SessionUser = {
 	email: string;
 };
 
+/**
+ * The single hardcoded admin identity until a `role` column lands with
+ * the backend round (see HANDOFF §2.2). Shared by the admin route guard
+ * and the dashboard's Admin queue link so one source of truth drives both.
+ */
+export const ADMIN_ID = 'stub-user-id';
+
+export function isAdminUser(user: Pick<SessionUser, 'id'> | null): boolean {
+	return user !== null && user.id === ADMIN_ID;
+}
+
 export function getSession(cookies: Cookies): SessionUser | null {
 	const raw = cookies.get(SESSION_COOKIE);
 	if (!raw) return null;

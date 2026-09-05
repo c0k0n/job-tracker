@@ -114,6 +114,22 @@
 		if (out[out.length - 1] !== n - 1) out.push(n - 1);
 		return out;
 	});
+
+	// Human-readable date for tooltips, e.g. "Tue, May 12".
+	const DATE_LABEL = new Intl.DateTimeFormat('en-US', {
+		weekday: 'short',
+		month: 'short',
+		day: 'numeric'
+	});
+
+	function dayTooltip(p: DayPoint): string {
+		const parts = [DATE_LABEL.format(p.date)];
+		if (p.applied > 0) parts.push(`${p.applied} applied`);
+		if (p.transitions > 0)
+			parts.push(`${p.transitions} stage move${p.transitions === 1 ? '' : 's'}`);
+		if (p.applied === 0 && p.transitions === 0) parts.push('no activity');
+		return parts.join(' · ');
+	}
 </script>
 
 {#if !hasData}
@@ -145,12 +161,12 @@
 			<div class="flex items-center gap-4 text-xs">
 				<span class="flex items-center gap-1.5">
 					<span aria-hidden="true" class="inline-block size-2 rounded-full bg-accent"></span>
-					<span class="text-muted">Applications · {totalApplied}</span>
+					<span class="text-muted">Applied · {totalApplied}</span>
 				</span>
 				<span class="flex items-center gap-1.5">
 					<span aria-hidden="true" class="inline-block size-2 rounded-full bg-status-stalled-700"
 					></span>
-					<span class="text-muted">Transitions · {totalTransitions}</span>
+					<span class="text-muted">Stage moves · {totalTransitions}</span>
 				</span>
 			</div>
 		</header>
@@ -199,6 +215,22 @@
 				stroke-linejoin="round"
 				stroke-dasharray="4 3"
 			/>
+
+			<!-- Per-day hover target: an invisible column over each day with
+				a native tooltip ("Tue, May 12 · 2 applied · 1 stage move"). -->
+			<g>
+				{#each series as point, i (i)}
+					<rect
+						x={xFor(i) - W / series.length / 2}
+						y={PAD_Y}
+						width={W / series.length}
+						height={H - 2 * PAD_Y}
+						fill="transparent"
+					>
+						<title>{dayTooltip(point)}</title>
+					</rect>
+				{/each}
+			</g>
 		</svg>
 
 		<!--
@@ -210,5 +242,10 @@
 				<span>{series[i]?.label ?? ''}</span>
 			{/each}
 		</div>
+
+		<p class="mt-2 text-xs text-muted">
+			Hover any day for its dates. A "stage move" is a promotion after the day you applied — it
+			measures momentum, not just new applications.
+		</p>
 	</div>
 {/if}

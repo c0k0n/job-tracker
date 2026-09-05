@@ -133,13 +133,22 @@
 					: item.prevCount === 0
 						? 0
 						: (item.count / item.prevCount) * 100}
-				<li
-					class="flex items-center gap-3"
-					aria-label={`${item.stage.label}: ${item.count} of ${totalApplications} (${item.pct.toFixed(0)} percent)`}
-				>
+				{@const convLabel = conv === null ? '' : `${conv.toFixed(0)}% of prev`}
+				<!-- Color the conversion so a sharp drop reads at a glance:
+					healthy → green, some loss → amber, big drop → red. -->
+				{@const convClass = (() => {
+					if (conv === null) return '';
+					if (conv >= 80) return 'text-success';
+					if (conv >= 40) return 'text-status-stalled-700';
+					return 'text-danger';
+				})()}
+				{@const convTooltip = isFirst
+					? `${item.stage.label}: reached by ${item.count} of ${totalApplications} tracked applications, so ${item.pct.toFixed(0)}%.`
+					: `${item.stage.label}: ${item.count} of the ${item.prevCount} applications that reached the previous stage progressed to at least this stage (${(conv ?? 0).toFixed(0)}%). This is ${item.pct.toFixed(0)}% of all tracked applications.`}
+				<li class="flex items-center gap-3" title={convTooltip} aria-label={convTooltip}>
 					<!-- Stage label column: fixed width so bars align. -->
-					<span class="w-24 shrink-0 text-right font-mono text-[11px] text-muted uppercase">
-						{item.stage.shortLabel}
+					<span class="w-32 shrink-0 text-right font-mono text-[11px] text-muted uppercase">
+						{item.stage.label}
 					</span>
 
 					<!--
@@ -167,18 +176,18 @@
 					</div>
 
 					<!--
-						Pct + drop-off vs. previous. We show the cumulative
-						percentage (of total) AND the conversion from the
-						previous stage, so the user can see the drop at each
-						gate. The first row has no previous stage, so it
-						just shows the cumulative pct.
+						Readout: share of ALL tracked apps (pct) plus the
+						conversion from the previous stage, so the drop at each
+						gate is visible. The first row has no previous stage.
+						Hover/title explains each number in plain words.
 					-->
 					<span
-						class="hidden w-28 shrink-0 text-right font-mono text-[11px] tabular-nums sm:inline"
+						class="hidden w-40 shrink-0 text-right font-mono text-[11px] tabular-nums sm:inline"
+						title={convTooltip}
 					>
 						<span class="text-fg">{item.pct.toFixed(0)}%</span>
 						{#if conv !== null}
-							<span class="ml-1 text-muted">· {conv.toFixed(0)}% conv</span>
+							<span class="ml-1 {convClass}">{convLabel}</span>
 						{/if}
 					</span>
 				</li>
@@ -186,8 +195,10 @@
 		</ol>
 
 		<p class="mt-3 text-xs text-muted">
-			Conversion shows stage-to-stage progression. Closed stages (rejected, withdrawn) count only
-			toward "applied".
+			% is the share of all tracked applications that reached at least this stage.
+			<span class="font-medium text-fg/70"> % of prev </span>
+			is the conversion from the previous stage. Rejected or withdrawn applications count only toward
+			"applied".
 		</p>
 	</div>
 {/if}

@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { getSession } from '$lib/server/auth';
+import { isAdminUser } from '$lib/server/auth';
 
 /**
  * Admin queue page. Server-guarded by a hardcoded ADMIN_ID env stub.
@@ -17,15 +17,13 @@ interface PendingSignup {
 	reason: string | null;
 }
 
-const ADMIN_ID = 'stub-user-id';
-
 export const load: PageServerLoad = async ({ locals }) => {
 	if (!locals.user) {
 		throw redirect(303, '/?next=/admin/approvals');
 	}
 	// Admin guard: per HANDOFF §2.2 the admin is the user with id
 	// `ADMIN_ID` until we add a `role` column. Stub for now.
-	if (locals.user.id !== ADMIN_ID) {
+	if (!isAdminUser(locals.user)) {
 		throw redirect(303, '/dashboard');
 	}
 
@@ -60,8 +58,6 @@ export const load: PageServerLoad = async ({ locals }) => {
 		pending
 	};
 };
-
-void getSession; // imported for symmetry with dashboard server; reserved for the backend round.
 
 /**
  * Approve / reject actions. Round C: server-side accept + log only.

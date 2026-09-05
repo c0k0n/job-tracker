@@ -5,22 +5,14 @@
 	import { page as pageStore } from '$app/state';
 	import { enhance } from '$app/forms';
 	import type { PageData } from './$types';
-	import type {
-		Application,
-		ApplicationFilters,
-		ApplicationSort,
-		ApplicationStage,
-		KpiCounts
-	} from '$lib/types';
+	import type { Application, ApplicationFilters, ApplicationSort, KpiCounts } from '$lib/types';
 	import { applyFilters, applySort, serializeFiltersToUrl } from '$lib/utils/sortFilter';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import ApplicationsTable from '$lib/components/ApplicationsTable.svelte';
-	import PipelineBar from '$lib/components/PipelineBar.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import StageActivityHeatmap from '$lib/components/StageActivityHeatmap.svelte';
+	import StageDwellChart from '$lib/components/StageDwellChart.svelte';
 	import VelocityChart from '$lib/components/VelocityChart.svelte';
 	import ConversionFunnel from '$lib/components/ConversionFunnel.svelte';
 	import ApplicationDetailModal from '$lib/components/ApplicationDetailModal.svelte';
@@ -41,7 +33,6 @@
 		tags: []
 	});
 	let sort: ApplicationSort = $state({ key: 'stageChangedAt', dir: 'desc' });
-	let activeStageFilter: ApplicationStage | null = $state(null);
 
 	// Apply URL changes → local state. This is one-directional: URL wins
 	// on load; user interactions then write to URL via the `$effect` below.
@@ -94,20 +85,6 @@
 	const visibleRows: Application[] = $derived(
 		applySort(applyFilters(data.applications, filters), sort)
 	);
-
-	// Apply stage filter (clicked from the pipeline bar) on top of the
-	// existing filter set. Single-stage only at MVP.
-	function onSelectStage(stage: ApplicationStage) {
-		const isActive = activeStageFilter === stage;
-		activeStageFilter = isActive ? null : stage;
-		if (isActive) {
-			if (filters.stages.length === 1 && filters.stages[0] === stage) {
-				filters = { ...filters, stages: [] };
-			}
-		} else {
-			filters = { ...filters, stages: [stage] };
-		}
-	}
 
 	const kpis: KpiCounts = $derived(data.kpis);
 	const hasApplications = $derived(data.applications.length > 0 && !data.trashView);
@@ -301,11 +278,7 @@
 		<section class="mt-6 sm:mt-8" aria-labelledby="pipeline-heading">
 			<h2 id="pipeline-heading" class="text-sm font-medium text-fg">Pipeline</h2>
 			<div class="mt-3">
-				<PipelineBar
-					counts={data.stageCounts}
-					onSelect={onSelectStage}
-					activeStage={activeStageFilter}
-				/>
+				<ConversionFunnel apps={data.applications} />
 			</div>
 		</section>
 
@@ -313,11 +286,8 @@
 			<section class="mt-6 sm:mt-8" aria-labelledby="insights-heading">
 				<h2 id="insights-heading" class="text-sm font-medium text-fg">Insights</h2>
 				<div class="mt-3 grid gap-3 sm:gap-4 lg:grid-cols-2">
-					<StageActivityHeatmap apps={data.applications} />
 					<VelocityChart apps={data.applications} />
-				</div>
-				<div class="mt-3 sm:mt-4">
-					<ConversionFunnel apps={data.applications} />
+					<StageDwellChart apps={data.applications} />
 				</div>
 			</section>
 		{/if}
@@ -358,12 +328,14 @@
 				>
 					Export CSV
 				</a>
-				<a
-					href={resolvePath('/admin/approvals')}
-					class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-				>
-					Admin queue
-				</a>
+				{#if data.isAdmin}
+					<a
+						href={resolvePath('/admin/approvals')}
+						class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					>
+						Admin queue
+					</a>
+				{/if}
 				{#if !data.trashView && hasApplications}
 					<Button variant="primary" size="sm" onclick={openNewApp} ariaLabel="Add new application">
 						+ Add application
@@ -414,6 +386,7 @@
 			{:else}
 				<ApplicationsTable
 					rows={visibleRows}
+					trashView={data.trashView}
 					{sort}
 					{onRowClick}
 					onSortChange={(next) => (sort = next)}
@@ -425,18 +398,14 @@
 			<p class="mt-3 text-xs text-muted">
 				Showing {visibleRows.length} of {data.applications.length}
 				{visibleRows.length === 1 ? 'application' : 'applications'}.
-				{#if staleCount > 0}
-					<span class="ml-2 inline-flex items-center gap-1 align-middle">
-						<StatusBadge kind="status" value="stalled" />
-						<span class="text-muted">{staleCount} stalled or ghosted</span>
-					</span>
-				{/if}
 			</p>
 		{/if}
 	</section>
 
 	<footer class="mt-12 border-t border-border pt-4 text-xs text-muted">
-		<p>Sharing + R2 resume upload land in the backend round (D).</p>
+		<p>
+			Private job tracker — data is stubbed until the backend round (D1 + Drizzle + Better Auth).
+		</p>
 	</footer>
 </div>
 <!--

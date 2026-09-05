@@ -182,7 +182,7 @@
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}
 					>
-						{stage.shortLabel}
+						{stage.label}
 					</button>
 				{/each}
 			</div>
@@ -207,7 +207,7 @@
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}
 					>
-						{status.shortLabel}
+						{status.label}
 					</button>
 				{/each}
 			</div>

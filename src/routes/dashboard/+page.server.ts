@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { clearSession } from '$lib/server/auth';
+import { clearSession, isAdminUser } from '$lib/server/auth';
 import {
 	addContact,
 	addInterview,
@@ -13,7 +13,7 @@ import {
 	softDeleteApplication,
 	updateApplication
 } from '$lib/server/applications-data';
-import { computeKpis, countByStage } from '$lib/utils/kpis';
+import { computeKpis } from '$lib/utils/kpis';
 import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
 import type { ApplicationStage, ApplicationStatus, WorkArrangement } from '$lib/types';
 
@@ -39,23 +39,22 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	}
 
 	// Trash view toggle: ?trash=1 returns only soft-deleted rows;
-	// default returns only active rows. KPI + pipeline counts always
+	// default returns only active rows. KPI + chart rollups always
 	// come from the active set — they don't make sense for trashed rows.
+	// `activeApps` is fetched once and reused (the stub is a Map, but this
+	// keeps the call sites honest for when the real DB lands).
 	const trashView = url.searchParams.get('trash') === '1';
-	const applications = trashView
-		? listTrashedForUser(locals.user.id)
-		: getApplicationsForUser(locals.user.id);
 	const activeApps = getApplicationsForUser(locals.user.id);
+	const applications = trashView ? listTrashedForUser(locals.user.id) : activeApps;
 	const kpis = computeKpis(activeApps);
-	const stageCounts = countByStage(activeApps);
 	const { filters, sort } = parseFiltersFromUrl(url.searchParams);
-	const trashedCount = listTrashedForUser(locals.user.id).length;
+	const trashedCount = trashView ? applications.length : listTrashedForUser(locals.user.id).length;
 
 	return {
 		user: locals.user,
 		applications,
 		kpis,
-		stageCounts,
+		isAdmin: isAdminUser(locals.user),
 		filters,
 		sort,
 		tagFacets: tagFacetsFor(activeApps),
