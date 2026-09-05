@@ -30,6 +30,42 @@
 	--color-danger-bg: oklch(0.97 0.02 25);
 	--color-success: oklch(0.5 0.14 150);
 
+	/*
+	 * Stage colors. Each stage gets a 100 (bg) + 700 (fg) pair so pills and
+	 * progress bars can render in either mode. Kept low-chroma so the page
+	 * doesn't turn into a rainbow — the badges should read as state, not
+	 * decoration.
+	 */
+	--color-stage-saved-100: oklch(0.95 0.01 250);
+	--color-stage-saved-700: oklch(0.42 0.06 250);
+	--color-stage-applied-100: oklch(0.95 0.02 220);
+	--color-stage-applied-700: oklch(0.42 0.08 220);
+	--color-stage-progress-100: oklch(0.95 0.03 200);
+	--color-stage-progress-700: oklch(0.45 0.1 200);
+	--color-stage-late-100: oklch(0.95 0.04 170);
+	--color-stage-late-700: oklch(0.45 0.12 170);
+	--color-stage-offer-100: oklch(0.95 0.04 145);
+	--color-stage-offer-700: oklch(0.45 0.13 145);
+	--color-stage-terminal-100: oklch(0.93 0.02 290);
+	--color-stage-terminal-700: oklch(0.4 0.06 290);
+	--color-stage-closed-100: oklch(0.92 0.01 0);
+	--color-stage-closed-700: oklch(0.4 0.02 0);
+
+	/*
+	 * Status colors. Ranged separately from stage so a row can be
+	 * `stage: applied` + `status: ghosted` and both colors are visible.
+	 */
+	--color-status-active-100: oklch(0.94 0.03 150);
+	--color-status-active-700: oklch(0.4 0.1 150);
+	--color-status-stalled-100: oklch(0.95 0.04 80);
+	--color-status-stalled-700: oklch(0.42 0.12 80);
+	--color-status-ghosted-100: oklch(0.95 0.04 30);
+	--color-status-ghosted-700: oklch(0.42 0.14 30);
+	--color-status-paused-100: oklch(0.94 0.02 270);
+	--color-status-paused-700: oklch(0.4 0.08 270);
+	--color-status-closed-100: oklch(0.92 0.01 0);
+	--color-status-closed-700: oklch(0.4 0.02 0);
+
 	/* Font stack */
 	--font-sans:
 		ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
@@ -60,5 +96,31 @@
 		--color-danger-fg: oklch(0.16 0 0);
 		--color-danger-bg: oklch(0.25 0.05 25);
 		--color-success: oklch(0.72 0.14 150);
+
+		--color-stage-saved-100: oklch(0.27 0.02 250);
+		--color-stage-saved-700: oklch(0.85 0.06 250);
+		--color-stage-applied-100: oklch(0.28 0.04 220);
+		--color-stage-applied-700: oklch(0.85 0.08 220);
+		--color-stage-progress-100: oklch(0.28 0.05 200);
+		--color-stage-progress-700: oklch(0.85 0.1 200);
+		--color-stage-late-100: oklch(0.28 0.06 170);
+		--color-stage-late-700: oklch(0.85 0.12 170);
+		--color-stage-offer-100: oklch(0.27 0.06 145);
+		--color-stage-offer-700: oklch(0.85 0.13 145);
+		--color-stage-terminal-100: oklch(0.27 0.03 290);
+		--color-stage-terminal-700: oklch(0.82 0.06 290);
+		--color-stage-closed-100: oklch(0.25 0.01 0);
+		--color-stage-closed-700: oklch(0.75 0.02 0);
+
+		--color-status-active-100: oklch(0.26 0.05 150);
+		--color-status-active-700: oklch(0.85 0.1 150);
+		--color-status-stalled-100: oklch(0.27 0.07 80);
+		--color-status-stalled-700: oklch(0.85 0.12 80);
+		--color-status-ghosted-100: oklch(0.27 0.07 30);
+		--color-status-ghosted-700: oklch(0.85 0.14 30);
+		--color-status-paused-100: oklch(0.26 0.04 270);
+		--color-status-paused-700: oklch(0.82 0.08 270);
+		--color-status-closed-100: oklch(0.25 0.01 0);
+		--color-status-closed-700: oklch(0.75 0.02 0);
 	}
 }

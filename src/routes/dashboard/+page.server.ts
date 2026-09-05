@@ -1,6 +1,9 @@
 import { redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { clearSession } from '$lib/server/auth';
+import { getApplicationsForUser } from '$lib/server/applications-data';
+import { computeKpis, countByStage } from '$lib/utils/kpis';
+import { parseFiltersFromUrl } from '$lib/utils/sortFilter';
 
 /**
  * Dashboard server load.
@@ -9,14 +12,33 @@ import { clearSession } from '$lib/server/auth';
  * line ever runs. The redirect happens before any data is fetched or any
  * page component is rendered. With Better Auth wired later, this exact
  * check (`event.locals.user` populated by the hooks) is the gate.
+ *
+ * Once Better Auth is in place, add a `disabled` flag to the user record
+ * and gate access here:
+ *
+ *   if (locals.user.disabled) {
+ *     throw redirect(303, '/pending-approval');
+ *   }
  */
 export const load: PageServerLoad = async ({ locals, url }) => {
 	if (!locals.user) {
-		// Preserve where the user tried to go so we can bounce them back after sign-in.
 		const next = encodeURIComponent(url.pathname + url.search);
 		throw redirect(303, `/?next=${next}`);
 	}
-	return { user: locals.user };
+
+	const applications = getApplicationsForUser(locals.user.id);
+	const kpis = computeKpis(applications);
+	const stageCounts = countByStage(applications);
+	const { filters, sort } = parseFiltersFromUrl(url.searchParams);
+
+	return {
+		user: locals.user,
+		applications,
+		kpis,
+		stageCounts,
+		filters,
+		sort
+	};
 };
 
 /**
