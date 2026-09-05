@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve as resolvePath } from '$app/paths';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page as pageStore } from '$app/state';
+	import { enhance } from '$app/forms';
 	import type { PageData } from './$types';
 	import type {
 		Application,
@@ -21,6 +23,10 @@
 	import StageActivityHeatmap from '$lib/components/StageActivityHeatmap.svelte';
 	import VelocityChart from '$lib/components/VelocityChart.svelte';
 	import ConversionFunnel from '$lib/components/ConversionFunnel.svelte';
+	import ApplicationDetailModal from '$lib/components/ApplicationDetailModal.svelte';
+	import ResumeLibraryModal from '$lib/components/ResumeLibraryModal.svelte';
+	import ApplicationForm from '$lib/components/ApplicationForm.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -55,29 +61,31 @@
 	// canonical internal URL.
 	const urlTarget = $derived.by(() => {
 		const sp = serializeFiltersToUrl(filters, sort);
-		const search = sp.toString() ? `?${sp.toString()}` : '';
-		// `/dashboard${search}` starts with `/`, satisfying resolvePath's
-		// absolute-path requirement. The interpolated search keeps the
-		// type narrower than a bare `string` so TS is happy too.
-		return resolvePath(`/dashboard${search}`);
+		const search = sp.toString() ? sp.toString() : '';
+		const trash = data.trashView ? 'trash=1' : '';
+		// Preserve the modal-open flags (?app, ?new, ?resume) when
+		// filter/sort/trash changes, so the sync effect below never
+		// strips a modal the user just opened.
+		const flags: string[] = [];
+		for (const key of ['app', 'new', 'resume']) {
+			const value = pageStore.url.searchParams.get(key);
+			if (value) flags.push(`${key}=${encodeURIComponent(value)}`);
+		}
+		const parts = [trash, search, ...flags].filter(Boolean);
+		const query = parts.length ? `?${parts.join('&')}` : '';
+		return resolvePath(`/dashboard${query}`);
 	});
 
 	$effect(() => {
 		const target = urlTarget;
 		const current = pageStore.url.pathname + pageStore.url.search;
 		if (target !== current) {
-			// `goto` is fire-and-forget here. The promise's resolution
-			// (the load function re-running) is what we actually want;
-			// awaiting it doesn't add value. We attach `.catch` to
-			// silently swallow navigation cancellations (e.g. the user
-			// clicked another link first).
 			void goto(target, {
 				replaceState: true,
 				keepFocus: true,
 				noScroll: true
 			}).catch(() => {
-				// Navigation cancelled (e.g. user clicked another link first).
-				// No-op.
+				// Navigation cancelled.
 			});
 		}
 	});
@@ -88,16 +96,11 @@
 	);
 
 	// Apply stage filter (clicked from the pipeline bar) on top of the
-	// existing filter set. Single-stage only at MVP; future round can add
-	// multi-select by extending the filter shape. We do this in the click
-	// handler (not in an $effect) because updating `filters` inside an
-	// $effect that reads `filters` is the classic reactivity anti-pattern.
+	// existing filter set. Single-stage only at MVP.
 	function onSelectStage(stage: ApplicationStage) {
 		const isActive = activeStageFilter === stage;
 		activeStageFilter = isActive ? null : stage;
 		if (isActive) {
-			// Active stage was unset and the current stage filter matches
-			// the previously-active one — clear it.
 			if (filters.stages.length === 1 && filters.stages[0] === stage) {
 				filters = { ...filters, stages: [] };
 			}
@@ -107,7 +110,8 @@
 	}
 
 	const kpis: KpiCounts = $derived(data.kpis);
-	const hasApplications = $derived(data.applications.length > 0);
+	const hasApplications = $derived(data.applications.length > 0 && !data.trashView);
+	const hasTrashedApps = $derived(data.trashView && data.applications.length > 0);
 	const hasVisibleRows = $derived(visibleRows.length > 0);
 	const hasActiveFilters = $derived(
 		filters.q.length > 0 ||
@@ -145,17 +149,67 @@
 		return `Stalled or ghosted: consider following up`;
 	});
 
-	// Per-row click handler. In Round A we just log it; Round C wires
-	// it to the application-detail modal.
-	function onRowClick() {
-		// Intentionally a no-op in Round A. The row already shows hover
-		// focus and `role="link"` for keyboard activation; the modal
-		// lands in Round C.
+	// Row click → server reload to fetch the detail bundle, then
+	// the modal renders from `data.activeDetail`. Using `?app=`
+	// (not shallow routing) because the detail bundle is large
+	// and we want it server-rendered for the initial paint.
+	function onRowClick(app: Application) {
+		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
+		sp.set('app', app.id);
+		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+
+	// Trash view toggle: navigate to /dashboard?trash=1 / without.
+	const trashHref = $derived(resolvePath(data.trashView ? '/dashboard' : '/dashboard?trash=1'));
+	const trashLabel = $derived(data.trashView ? 'Active' : 'Trash');
+
+	let isNewAppOpen = $derived(pageStore.url.searchParams.get('new') === '1');
+
+	// The new-app modal is `bind:open` on the derived above, so when it
+	// closes itself (Esc, backdrop, header X) `open` flips without the
+	// URL changing. Strip `?new=` so the URL stays the source of truth
+	// and the modal doesn't reopen on the next render.
+	$effect(() => {
+		if (isNewAppOpen) return;
+		if (typeof window === 'undefined') return;
+		const sp = new SvelteURLSearchParams(window.location.search);
+		if (!sp.has('new')) return;
+		sp.delete('new');
+		const qs = sp.toString();
+		const next = (qs ? `/dashboard?${qs}` : '/dashboard') as `/${string}`;
+		void goto(resolvePath(next), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	});
+
+	function openNewApp() {
+		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
+		sp.set('new', '1');
+		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+	function openResume() {
+		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
+		sp.set('resume', '1');
+		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
 	}
 </script>
 
 <svelte:head>
-	<title>Dashboard · Job Tracker</title>
+	<title>{data.trashView ? 'Trash' : 'Dashboard'} · Job Tracker</title>
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -165,24 +219,20 @@
 		<div>
 			<p class="font-mono text-[11px] tracking-widest text-muted uppercase">Job Tracker</p>
 			<h1 class="mt-1 text-2xl font-semibold tracking-tight text-balance text-fg sm:text-3xl">
-				Dashboard
+				{data.trashView ? 'Trash' : 'Dashboard'}
 			</h1>
 			<p class="mt-1 text-sm text-pretty text-muted">
 				Welcome back, {data.user.username}.
 			</p>
 		</div>
-		<form method="POST">
+		<!-- Actions live in the Applications section header, not here.
+			The top header only carries sign-out. -->
+		<form method="POST" action="?/signout" use:enhance>
 			<Button type="submit" variant="outline">Sign out</Button>
 		</form>
 	</header>
 
-	<!--
-		Stale/ghosted banner. Always shown when the count is > 0 — these
-		need explicit user attention, not a chart they might miss. We
-		don't gate this on `hasApplications` so even users with one stale
-		row see it.
-	-->
-	{#if staleCount > 0}
+	{#if staleCount > 0 && !data.trashView}
 		<div
 			role="status"
 			class="mb-6 flex items-start gap-3 rounded-lg border border-status-stalled-700 bg-status-stalled-100 px-4 py-3"
@@ -212,108 +262,146 @@
 		</div>
 	{/if}
 
-	<!-- KPI strip -->
-	<section
-		aria-label="Application metrics"
-		class="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5"
-	>
-		<StatCard label="Active" value={kpis.active} sublabel={activeSublabel} accent="accent" />
-		<StatCard
-			label="Interviews"
-			value={kpis.interviewsNext30Days}
-			sublabel={interviewsSublabel}
-			accent="warning"
-		/>
-		<StatCard
-			label="Offers"
-			value={kpis.offersPending}
-			sublabel={offersSublabel}
-			accent="success"
-		/>
-		<StatCard
-			label="Applied"
-			value={kpis.appliedThisMonth}
-			sublabel={appliedSublabel}
-			accent="accent"
-		/>
-		<StatCard
-			label="Needs attention"
-			value={kpis.needsAttention}
-			sublabel={needsAttentionSublabel}
-			accent="danger"
-			tone={kpis.needsAttention > 0 ? 'danger' : 'default'}
-		/>
-	</section>
-
-	<!--
-		Pipeline bar. Click any stage segment to filter the table by that
-		stage. We render this even when there are no applications so the
-		user sees the shape and knows where their counts will appear.
-	-->
-	<section class="mt-6 sm:mt-8" aria-labelledby="pipeline-heading">
-		<h2 id="pipeline-heading" class="text-sm font-medium text-fg">Pipeline</h2>
-		<div class="mt-3">
-			<PipelineBar
-				counts={data.stageCounts}
-				onSelect={onSelectStage}
-				activeStage={activeStageFilter}
+	{#if !data.trashView}
+		<!-- KPI strip -->
+		<section
+			aria-label="Application metrics"
+			class="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5"
+		>
+			<StatCard label="Active" value={kpis.active} sublabel={activeSublabel} accent="accent" />
+			<StatCard
+				label="Interviews"
+				value={kpis.interviewsNext30Days}
+				sublabel={interviewsSublabel}
+				accent="warning"
 			/>
-		</div>
-	</section>
-
-	<!--
-		Insights (Round B). Three independent visualizations, each handles
-		its own empty state, so the section doesn't need a wrapper
-		empty-state. Layout: heatmap + velocity side-by-side on `lg+`,
-		funnel full-width below. Mobile stack order is intentional:
-		heatmap (historical context) → velocity (recent activity) → funnel
-		(progression shape). Only rendered when the user has any data.
-	-->
-	{#if hasApplications}
-		<section class="mt-6 sm:mt-8" aria-labelledby="insights-heading">
-			<h2 id="insights-heading" class="text-sm font-medium text-fg">Insights</h2>
-			<div class="mt-3 grid gap-3 sm:gap-4 lg:grid-cols-2">
-				<StageActivityHeatmap apps={data.applications} />
-				<VelocityChart apps={data.applications} />
-			</div>
-			<div class="mt-3 sm:mt-4">
-				<ConversionFunnel apps={data.applications} />
-			</div>
+			<StatCard
+				label="Offers"
+				value={kpis.offersPending}
+				sublabel={offersSublabel}
+				accent="success"
+			/>
+			<StatCard
+				label="Applied"
+				value={kpis.appliedThisMonth}
+				sublabel={appliedSublabel}
+				accent="accent"
+			/>
+			<StatCard
+				label="Needs attention"
+				value={kpis.needsAttention}
+				sublabel={needsAttentionSublabel}
+				accent="danger"
+				tone={kpis.needsAttention > 0 ? 'danger' : 'default'}
+			/>
 		</section>
 	{/if}
 
-	<!-- Filters + table -->
-	<section class="mt-6 sm:mt-8" aria-labelledby="applications-heading">
-		<div class="flex flex-wrap items-end justify-between gap-3">
-			<h2 id="applications-heading" class="text-sm font-medium text-fg">Applications</h2>
-			{#if hasApplications}
-				<Button
-					variant="primary"
-					size="sm"
-					disabled
-					ariaLabel="Add application (coming in Round C)"
-				>
-					+ Add application
-				</Button>
-			{/if}
-		</div>
+	{#if !data.trashView}
+		<section class="mt-6 sm:mt-8" aria-labelledby="pipeline-heading">
+			<h2 id="pipeline-heading" class="text-sm font-medium text-fg">Pipeline</h2>
+			<div class="mt-3">
+				<PipelineBar
+					counts={data.stageCounts}
+					onSelect={onSelectStage}
+					activeStage={activeStageFilter}
+				/>
+			</div>
+		</section>
 
 		{#if hasApplications}
+			<section class="mt-6 sm:mt-8" aria-labelledby="insights-heading">
+				<h2 id="insights-heading" class="text-sm font-medium text-fg">Insights</h2>
+				<div class="mt-3 grid gap-3 sm:gap-4 lg:grid-cols-2">
+					<StageActivityHeatmap apps={data.applications} />
+					<VelocityChart apps={data.applications} />
+				</div>
+				<div class="mt-3 sm:mt-4">
+					<ConversionFunnel apps={data.applications} />
+				</div>
+			</section>
+		{/if}
+	{/if}
+
+	<!-- Applications table (active or trashed) -->
+	<section class="mt-6 sm:mt-8" aria-labelledby="applications-heading">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex flex-wrap items-baseline gap-3">
+				<h2 id="applications-heading" class="text-sm font-medium text-fg">
+					{data.trashView ? 'Trash' : 'Applications'}
+				</h2>
+				{#if data.trashedCount > 0}
+					<a
+						href={trashHref}
+						class="rounded-full border border-border bg-surface px-2.5 py-0.5 font-mono text-[11px] tracking-wide text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					>
+						{trashLabel} · {data.trashedCount}
+					</a>
+				{/if}
+			</div>
+			<!-- Action cluster: secondary actions sit beside the primary
+				"Add application" button, not in the top header (sign-out only). -->
+			<div class="flex flex-wrap items-center gap-2">
+				<Button
+					type="button"
+					variant="ghost"
+					size="sm"
+					onclick={openResume}
+					ariaLabel="Open resume library"
+				>
+					Resumes
+				</Button>
+				<a
+					href={resolvePath('/dashboard/export.csv')}
+					download
+					class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				>
+					Export CSV
+				</a>
+				<a
+					href={resolvePath('/admin/approvals')}
+					class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				>
+					Admin queue
+				</a>
+				{#if !data.trashView && hasApplications}
+					<Button variant="primary" size="sm" onclick={openNewApp} ariaLabel="Add new application">
+						+ Add application
+					</Button>
+				{/if}
+			</div>
+		</div>
+
+		{#if !data.trashView && hasApplications}
 			<div class="mt-4">
 				<FilterBar bind:filters bind:sort {hasApplications} tagFacets={data.tagFacets} />
 			</div>
 		{/if}
 
 		<div class="mt-4">
-			{#if !hasApplications}
+			{#if !data.trashView && !hasApplications}
 				<EmptyState
 					title="Add your first application"
 					description="Track job applications, contacts, interviews, and notes. Private to your account."
 				>
 					{#snippet action()}
-						<Button variant="primary" disabled ariaLabel="Add application (coming in Round C)">
+						<Button variant="primary" onclick={openNewApp} ariaLabel="Add new application">
 							+ Add application
 						</Button>
+					{/snippet}
+				</EmptyState>
+			{:else if data.trashView && !hasTrashedApps}
+				<EmptyState
+					title="Trash is empty"
+					description="Soft-deleted applications will appear here so you can restore or permanently delete them."
+				>
+					{#snippet action()}
+						<a
+							href={resolvePath('/dashboard')}
+							class="rounded-md border border-border bg-surface px-4 py-2 text-sm text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						>
+							Back to active
+						</a>
 					{/snippet}
 				</EmptyState>
 			{:else if !hasVisibleRows}
@@ -333,7 +421,7 @@
 			{/if}
 		</div>
 
-		{#if hasApplications}
+		{#if (hasApplications || hasTrashedApps) && !data.trashView}
 			<p class="mt-3 text-xs text-muted">
 				Showing {visibleRows.length} of {data.applications.length}
 				{visibleRows.length === 1 ? 'application' : 'applications'}.
@@ -347,12 +435,23 @@
 		{/if}
 	</section>
 
-	<!--
-		Footer. Round C lands here: application detail modal, sharing,
-		admin approvals, CSV export. We keep the hint small so the user
-		knows the dashboard will keep growing.
-	-->
 	<footer class="mt-12 border-t border-border pt-4 text-xs text-muted">
-		<p>Application detail, sharing, and CSV export are on the way. This is Round C.</p>
+		<p>Sharing + R2 resume upload land in the backend round (D).</p>
 	</footer>
 </div>
+<!--
+	Modals. Each is mounted unconditionally; their open state is derived
+	from the URL query (?app / ?new / ?resume). Closing a modal flips the
+	bound `open` and an effect strips that query param, so the URL remains
+	the single source of truth (refresh-safe, shareable).
+-->
+<ApplicationDetailModal detail={data.activeDetail} />
+<ResumeLibraryModal applications={data.applications} />
+<Modal
+	bind:open={isNewAppOpen}
+	title="Add application"
+	subtitle="Track a new job application."
+	size="lg"
+>
+	<ApplicationForm create />
+</Modal>

@@ -17,14 +17,19 @@
  *   - getApplicationsForUser(userId) → db.select().from(application).where(eq(application.userId, userId))
  *   - createApplication(userId, input) → db.insert(application).values(...).returning()
  *   - updateApplication(userId, id, patch) → db.update(application).set(patch).where(...).returning()
- *   - deleteApplication(userId, id) → db.delete(application).where(...).returning()
+ *   - softDeleteApplication(userId, id) → db.update(application).set({ deletedAt: now() }).where(...)
+ *   - permanentlyDeleteApplication(userId, id) → db.delete(application).where(...).returning()
  */
 
 import type {
+	ActivityEvent,
 	Application,
+	ApplicationDetail,
 	ApplicationStage,
 	ApplicationStatus,
+	Contact,
 	CurrencyCode,
+	Interview,
 	Salary,
 	WorkArrangement
 } from '$lib/types';
@@ -229,7 +234,7 @@ const FIXTURES: StubApp[] = [
 		status: 'ghosted',
 		workArrangement: 'hybrid',
 		salary: { shape: 'range', minMinorUnits: 17000000, maxMinorUnits: 20000000, currency: 'USD' },
-		postingUrl: 'https://notion.so/careers',
+		postingUrl: 'https://notion.so/jobs',
 		postingDescription: "Build Notion's editor and collaboration surfaces.",
 		notes: 'Recruiter went silent after first call.',
 		resumeId: null,
@@ -293,7 +298,7 @@ const FIXTURES: StubApp[] = [
 		status: 'closed',
 		workArrangement: 'onsite',
 		salary: { shape: 'range', minMinorUnits: 16000000, maxMinorUnits: 19000000, currency: 'USD' },
-		postingUrl: 'https://robinhood.com/careers',
+		postingUrl: 'https://robinhood.com/jobs',
 		postingDescription: "Frontend engineer for Robinhood's trading platform.",
 		notes: 'Did not meet the L5 bar.',
 		resumeId: null,
@@ -309,7 +314,7 @@ const FIXTURES: StubApp[] = [
 		status: 'closed',
 		workArrangement: 'remote',
 		salary: { shape: 'range', minMinorUnits: 17000000, maxMinorUnits: 21000000, currency: 'USD' },
-		postingUrl: 'https://coinbase.com/careers',
+		postingUrl: 'https://coinbase.com/jobs',
 		postingDescription: "Senior engineer for Coinbase's retail product.",
 		notes: null,
 		resumeId: null,
@@ -325,7 +330,7 @@ const FIXTURES: StubApp[] = [
 		status: 'closed',
 		workArrangement: 'hybrid',
 		salary: { shape: 'exact', minorUnits: 19500000, currency: 'USD' },
-		postingUrl: 'https://openai.com/careers',
+		postingUrl: 'https://openai.com/jobs',
 		postingDescription: 'Frontend engineer for ChatGPT and the API platform.',
 		notes: 'Accepted offer.',
 		resumeId: 'resume-openai',
@@ -376,24 +381,35 @@ function materializeFixture(f: StubApp, index: number): Application {
 		nextActionAt,
 		createdAt,
 		updatedAt: createdAt,
-		tags: f.tags ?? []
+		tags: f.tags ?? [],
+		deletedAt: null
 	};
 }
 
 interface Store {
 	apps: Map<string, Application>;
+	interviews: Map<string, Interview[]>;
+	contacts: Map<string, Contact[]>;
+	activities: Map<string, ActivityEvent[]>;
 }
 
 function getStore(): Store {
 	const g = globalThis as unknown as Record<symbol, Store | undefined>;
 	let store = g[STORE_KEY];
 	if (!store) {
-		store = { apps: new Map() };
+		store = {
+			apps: new Map(),
+			interviews: new Map(),
+			contacts: new Map(),
+			activities: new Map()
+		};
 		for (let i = 0; i < FIXTURES.length; i++) {
 			const f = FIXTURES[i];
 			if (!f) continue;
 			const app = materializeFixture(f, i);
 			store.apps.set(app.id, app);
+			// Seed one activity per app (the initial stage event).
+			seedActivities(store, app);
 		}
 		g[STORE_KEY] = store;
 	}
@@ -401,16 +417,72 @@ function getStore(): Store {
 }
 
 /**
+ * Seed a minimal activity timeline for a freshly materialized fixture so
+ * the Activity tab has something to render. Only `created` + `stage_changed`
+ * events for the current stage. Round C: keep this deterministic so the
+ * Playwright tests can assert specific counts.
+ */
+function seedActivities(store: Store, app: Application): void {
+	const events: ActivityEvent[] = [
+		{
+			id: `${app.id}-evt-0`,
+			applicationId: app.id,
+			kind: 'created',
+			occurredAt: app.createdAt,
+			fromStage: null,
+			toStage: 'saved',
+			note: null
+		}
+	];
+	if (app.stage !== 'saved') {
+		events.push({
+			id: `${app.id}-evt-1`,
+			applicationId: app.id,
+			kind: 'stage_changed',
+			occurredAt: app.stageChangedAt,
+			fromStage: 'saved',
+			toStage: app.stage,
+			note: null
+		});
+	}
+	store.activities.set(app.id, events);
+}
+
+/** Options for `getApplicationsForUser`. */
+export interface ListApplicationsOptions {
+	/**Include soft-deleted rows alongside active ones (default false). */
+	includeTrashed?: boolean;
+	/**Return only trashed rows (default false). */
+	onlyTrashed?: boolean;
+}
+
+/**
  * Return all applications for a given user, ordered by most-recent stage
  * change (default sort). Excludes other users' rows by construction — the
  * stub store only has one user, but the function signature already
  * supports per-user isolation.
+ *
+ * By default the trashed bin is excluded; pass `onlyTrashed: true` to
+ * get the trash view, or `includeTrashed: true` for everything.
  */
-export function getApplicationsForUser(userId: string): Application[] {
+export function getApplicationsForUser(
+	userId: string,
+	options: ListApplicationsOptions = {}
+): Application[] {
 	const store = getStore();
 	return Array.from(store.apps.values())
 		.filter((a) => a.userId === userId)
+		.filter((a) => {
+			if (options.onlyTrashed) return a.deletedAt !== null;
+			if (!options.includeTrashed && a.deletedAt !== null) return false;
+			return true;
+		})
 		.sort((a, b) => new Date(b.stageChangedAt).getTime() - new Date(a.stageChangedAt).getTime());
+}
+
+/**Return only the soft-deleted rows for a user (trash view).*/
+export function listTrashedForUser(userId: string): Application[] {
+	return getApplicationsForUser(userId, { onlyTrashed: true });
 }
 
 export function getApplicationById(userId: string, id: string): Application | null {
@@ -420,9 +492,34 @@ export function getApplicationById(userId: string, id: string): Application | nu
 	return app;
 }
 
+/**
+ * Return the application + its side tables (interviews, contacts,
+ * activities) for the detail modal. Returns null if the row isn't
+ * visible to this user (either it doesn't exist, belongs to another
+ * user, or has been soft-deleted and the caller didn't pass
+ * `{ includeTrashed: true }`).
+ */
+export function getApplicationDetail(
+	userId: string,
+	id: string,
+	options: { includeTrashed?: boolean } = {}
+): ApplicationDetail | null {
+	const store = getStore();
+	const app = store.apps.get(id);
+	if (!app || app.userId !== userId) return null;
+	if (!options.includeTrashed && app.deletedAt !== null) return null;
+
+	return {
+		application: app,
+		interviews: store.interviews.get(id) ?? [],
+		contacts: store.contacts.get(id) ?? [],
+		activities: store.activities.get(id) ?? []
+	};
+}
+
 export type CreateApplicationInput = Omit<
 	Application,
-	'id' | 'userId' | 'createdAt' | 'updatedAt' | 'stageChangedAt'
+	'id' | 'userId' | 'createdAt' | 'updatedAt' | 'stageChangedAt' | 'deletedAt'
 >;
 
 export function createApplication(userId: string, input: CreateApplicationInput): Application {
@@ -434,13 +531,17 @@ export function createApplication(userId: string, input: CreateApplicationInput)
 		userId,
 		createdAt: now,
 		updatedAt: now,
-		stageChangedAt: now
+		stageChangedAt: now,
+		deletedAt: null
 	};
 	store.apps.set(app.id, app);
+	seedActivities(store, app);
 	return app;
 }
 
-export type UpdateApplicationInput = Partial<Omit<Application, 'id' | 'userId' | 'createdAt'>>;
+export type UpdateApplicationInput = Partial<
+	Omit<Application, 'id' | 'userId' | 'createdAt' | 'deletedAt'>
+>;
 
 export function updateApplication(
 	userId: string,
@@ -456,6 +557,7 @@ export function updateApplication(
 		id: existing.id,
 		userId: existing.userId,
 		createdAt: existing.createdAt,
+		deletedAt: existing.deletedAt, // never via this path
 		updatedAt: new Date().toISOString(),
 		// Bump stageChangedAt when stage moves so the duration-in-stage
 		// counters reset correctly. The UI calls updateApplication with the
@@ -466,25 +568,144 @@ export function updateApplication(
 				: existing.stageChangedAt
 	};
 	store.apps.set(id, next);
+
+	// Append a stage_changed activity event when stage transitions.
+	if (patch.stage && patch.stage !== existing.stage) {
+		const events = store.activities.get(id) ?? [];
+		events.push({
+			id: `${id}-evt-${events.length}`,
+			applicationId: id,
+			kind: 'stage_changed',
+			occurredAt: next.stageChangedAt,
+			fromStage: existing.stage,
+			toStage: patch.stage,
+			note: null
+		});
+		store.activities.set(id, events);
+	}
+
 	return next;
 }
 
-export function deleteApplication(userId: string, id: string): boolean {
+/**
+ * Soft-delete: stamps `deletedAt` with the current ISO timestamp. The row
+ * stays in the store so the user can restore it from the trash view.
+ * Idempotent — calling twice on the same row is a no-op.
+ */
+export function softDeleteApplication(userId: string, id: string): Application | null {
+	const store = getStore();
+	const existing = store.apps.get(id);
+	if (!existing || existing.userId !== userId) return null;
+	if (existing.deletedAt !== null) return existing;
+	const next: Application = {
+		...existing,
+		deletedAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString()
+	};
+	store.apps.set(id, next);
+	return next;
+}
+
+/**Restore a soft-deleted row (trash → active).*/
+export function restoreApplication(userId: string, id: string): Application | null {
+	const store = getStore();
+	const existing = store.apps.get(id);
+	if (!existing || existing.userId !== userId) return null;
+	if (existing.deletedAt === null) return existing;
+	const next: Application = {
+		...existing,
+		deletedAt: null,
+		updatedAt: new Date().toISOString()
+	};
+	store.apps.set(id, next);
+	return next;
+}
+
+/**Hard-delete: removes the row + its side tables from the store. Irreversible.*/
+export function permanentlyDeleteApplication(userId: string, id: string): boolean {
 	const store = getStore();
 	const existing = store.apps.get(id);
 	if (!existing || existing.userId !== userId) return false;
 	store.apps.delete(id);
+	store.interviews.delete(id);
+	store.contacts.delete(id);
+	store.activities.delete(id);
 	return true;
 }
 
-/**
- * Reset the in-memory store back to the fixture defaults.
- * Useful for dev-only "wipe and reseed" affordances; not exposed in the UI.
- */
+// ---- Round C: Interview / Contact CRUD (mock-backed) ----
+
+export type CreateInterviewInput = Omit<Interview, 'id' | 'applicationId' | 'createdAt'>;
+
+export function addInterview(
+	userId: string,
+	applicationId: string,
+	input: CreateInterviewInput
+): Interview | null {
+	const store = getStore();
+	const app = store.apps.get(applicationId);
+	if (!app || app.userId !== userId) return null;
+	const interview: Interview = {
+		...input,
+		id: `int-${crypto.randomUUID()}`,
+		applicationId,
+		createdAt: new Date().toISOString()
+	};
+	const list = store.interviews.get(applicationId) ?? [];
+	list.push(interview);
+	store.interviews.set(applicationId, list);
+	// Mirror to the activity timeline.
+	const events = store.activities.get(applicationId) ?? [];
+	events.push({
+		id: `${applicationId}-evt-${events.length}`,
+		applicationId,
+		kind: 'interview_scheduled',
+		occurredAt: interview.createdAt,
+		fromStage: null,
+		toStage: null,
+		note: `${interview.kind} on ${interview.scheduledAt}`
+	});
+	store.activities.set(applicationId, events);
+	return interview;
+}
+
+export type CreateContactInput = Omit<Contact, 'id' | 'applicationId' | 'createdAt'>;
+
+export function addContact(
+	userId: string,
+	applicationId: string,
+	input: CreateContactInput
+): Contact | null {
+	const store = getStore();
+	const app = store.apps.get(applicationId);
+	if (!app || app.userId !== userId) return null;
+	const contact: Contact = {
+		...input,
+		id: `contact-${crypto.randomUUID()}`,
+		applicationId,
+		createdAt: new Date().toISOString()
+	};
+	const list = store.contacts.get(applicationId) ?? [];
+	list.push(contact);
+	store.contacts.set(applicationId, list);
+	const events = store.activities.get(applicationId) ?? [];
+	events.push({
+		id: `${applicationId}-evt-${events.length}`,
+		applicationId,
+		kind: 'contact_added',
+		occurredAt: contact.createdAt,
+		fromStage: null,
+		toStage: null,
+		note: `${contact.name}${contact.role ? ` (${contact.role})` : ''}`
+	});
+	store.activities.set(applicationId, events);
+	return contact;
+}
+
+/**Reset the in-memory store back to the fixture defaults.*/
 export function resetStore(): void {
 	const g = globalThis as unknown as Record<symbol, Store | undefined>;
 	delete g[STORE_KEY];
 }
 
-// Re-export CurrencyCode so consumers of this module don't have to dig for it.
 export type { CurrencyCode };

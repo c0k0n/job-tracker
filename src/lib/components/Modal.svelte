@@ -2,8 +2,13 @@
 	// Module-scoped counter for stacking. We track how many modals are open
 	// globally so the topmost modal closes on Escape (not all of them) and
 	// so only the topmost one traps focus.
-	let openCount = $state(0);
-	let topId = $state<string | null>(null);
+	//
+	// Deliberately NON-reactive: the open-lifecycle `$effect` below reads
+	// these in its teardown (which Svelte tracks as dependencies) while its
+	// body writes them, which would re-trigger the effect forever. Keeping
+	// them as plain values breaks that cycle.
+	let openCount = 0;
+	let topId: string | null = null;
 	export function getOpenCount(): number {
 		return openCount;
 	}
@@ -50,7 +55,10 @@
 	const subtitleId: string | undefined = $derived(subtitle ? `${id}-subtitle` : undefined);
 
 	let dialogEl = $state<HTMLDivElement | null>(null);
-	let restoreFocusEl = $state<HTMLElement | null>(null);
+	// Non-reactive: only ever read/written inside the open-lifecycle effect
+	// and its teardown. Reactive state here would form a read-write cycle
+	// (teardown reads are effect dependencies).
+	let restoreFocusEl: HTMLElement | null = null;
 
 	const sizeClass = $derived(
 		{

@@ -25,7 +25,16 @@ declare global {
 		}
 
 		// interface PageData {}
-		// interface PageState {}
+
+		// PageState is set by `pushState(url, state)` from $app/navigation; read
+		// via `page.state` from $app/state. Round C uses shallow routing to
+		// mount modals without changing the URL pathname; each modal claims a
+		// unique state key so multiple deep-linkable panels could coexist.
+		interface PageState {
+			appId?: string;
+			newApp?: boolean;
+			resume?: boolean;
+		}
 	}
 }
 

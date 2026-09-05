@@ -88,6 +88,9 @@ export interface Application {
 	updatedAt: string;
 	/** Tag names (lowercase, hyphen-separated). Round B. */
 	tags: string[];
+	/** Soft-delete timestamp (ISO). When non-null, the row lives in
+	 * trash and is excluded from default loads. Round C. */
+	deletedAt: string | null;
 }
 
 /**
@@ -124,3 +127,60 @@ export interface ApplicationSort {
 	key: SortKey;
 	dir: SortDir;
 }
+
+// ---- Round C: side-tables for the application detail modal ----
+
+/** Interview / meeting scheduled for an application. */
+export interface Interview {
+	id: string;
+	applicationId: string;
+	kind: 'phone_screen' | 'technical' | 'onsite' | 'final' | 'coffee_chat' | 'other';
+	scheduledAt: string; // ISO date
+	durationMinutes: number | null;
+	withName: string | null;
+	withRole: string | null;
+	notes: string | null;
+	outcome: 'pending' | 'passed' | 'failed' | 'cancelled' | null;
+	createdAt: string;
+}
+
+/** A person attached to an application (recruiter, hiring manager, referrer). */
+export interface Contact {
+	id: string;
+	applicationId: string;
+	name: string;
+	role: string | null;
+	company: string | null;
+	email: string | null;
+	phone: string | null;
+	notes: string | null;
+	createdAt: string;
+}
+
+/** An activity / stage event on an application timeline. */
+export interface ActivityEvent {
+	id: string;
+	applicationId: string;
+	kind:
+		| 'created'
+		| 'stage_changed'
+		| 'status_changed'
+		| 'note_added'
+		| 'interview_scheduled'
+		| 'contact_added';
+	occurredAt: string;
+	fromStage: ApplicationStage | null;
+	toStage: ApplicationStage | null;
+	note: string | null;
+}
+
+/** Bundle of side-tables returned by `getApplicationDetail`. */
+export interface ApplicationDetail {
+	application: Application;
+	interviews: Interview[];
+	contacts: Contact[];
+	activities: ActivityEvent[];
+}
+
+/** Allowed values for the trash view query param. */
+export type TrashView = 'active' | 'trashed';
