@@ -23,9 +23,6 @@ import { getSession } from '$lib/server/auth';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
-	const user = getSession(event.cookies);
-	if (user) {
-		event.locals.user = user;
-	}
+	event.locals.user = getSession(event.cookies);
 	return resolve(event);
 };

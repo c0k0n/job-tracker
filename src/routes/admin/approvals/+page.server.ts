@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { isAdminUser } from '$lib/server/auth';
 
@@ -64,18 +64,24 @@ export const load: PageServerLoad = async ({ locals }) => {
  * The actual flag flip on the `user` table lands in the backend round.
  */
 export const actions: Actions = {
-	approve: async ({ request }) => {
+	approve: async ({ request, locals }) => {
+		if (!locals.user) throw redirect(303, '/?next=/admin/approvals');
+		if (!isAdminUser(locals.user)) throw redirect(303, '/dashboard');
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '');
+		if (!id) return fail(400, { id: '', errors: { id: 'Missing id.' } });
 		// In the backend round this becomes:
 		//   await db.update(user).set({ disabled: false }).where(eq(user.id, id))
 		// For now, log to the server console so the dev can see the action fired.
 		console.info('[admin/approvals] approve', id);
 		return { approved: id };
 	},
-	reject: async ({ request }) => {
+	reject: async ({ request, locals }) => {
+		if (!locals.user) throw redirect(303, '/?next=/admin/approvals');
+		if (!isAdminUser(locals.user)) throw redirect(303, '/dashboard');
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '');
+		if (!id) return fail(400, { id: '', errors: { id: 'Missing id.' } });
 		// Future: hard-delete the pending user record, or set a
 		// `rejectedAt` column. For now, log only.
 		console.info('[admin/approvals] reject', id);

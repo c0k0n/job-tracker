@@ -21,7 +21,7 @@ Bun + SvelteKit 2 (Svelte 5 runes-only) + Tailwind v4 + `adapter-cloudflare`, de
 - **`wrangler.jsonc` is minimal**: `main: .svelte-kit/cloudflare/_worker.js`, `assets.directory: .svelte-kit/cloudflare`, `observability.enabled`. No D1/KV/R2 bindings, no `compatibility_flags` yet. Adding auth/DB libs needing `node:crypto`/`node:async_hooks` requires `compatibility_flags: ["nodejs_als"]`.
 - **TS is strict** (`noUncheckedIndexedAccess`, `noUnusedLocals/Parameters` on). `svelte-check` enforces it.
 - **Prettier style**: tabs, single quotes, no trailing commas, `prettier-plugin-svelte` + `prettier-plugin-tailwindcss` (`tailwindStylesheet: ./src/routes/layout.css`).
-- **`src/app.d.ts`**: only `App.Platform` (`env/ctx/caches/cf?`) is declared. Add `App.Locals` when auth lands. `$lib/server` is server-only (build blocks client imports).
+- **`src/app.d.ts`**: declares `App.Platform` (env/ctx/caches/cf?), `App.Locals` (user: SessionUser | null), `App.Error` (code?: string), and `App.PageState` (Round C, currently unused). The `App.Locals.user` is populated by `src/hooks.server.ts` from the stub session cookie; Better Auth replaces this. `$lib/server` is server-only (build blocks client imports).
 
 ## Layout
 

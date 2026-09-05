@@ -8,80 +8,128 @@
 		WorkArrangement
 	} from '$lib/types';
 	import { STAGES, STATUSES, ARRANGEMENTS } from '$lib/constants/stages';
+	import {
+		defaultSalaryFormValues,
+		type SalaryFormValues,
+		type SalaryShapeValue
+	} from '$lib/utils/money';
+	import { toDateInputValue } from '$lib/utils/dates';
 	import Button from './Button.svelte';
-
-	type FieldErrors = {
-		company?: string;
-		role?: string;
-		stage?: string;
-		status?: string;
-		workArrangement?: string;
-	};
-
-	type DefaultValues = {
-		company?: string;
-		role?: string;
-		stage?: ApplicationStage;
-		status?: ApplicationStatus;
-		workArrangement?: WorkArrangement;
-		postingUrl?: string | null;
-		appliedAt?: string | null;
-		tagsRaw?: string;
-	};
+	import SalaryInput from './SalaryInput.svelte';
 
 	interface Props {
 		/** When set, the form edits this application (POSTs to ?/edit). */
 		application?: Application;
 		/** When true, the form creates a new application (POSTs to ?/create). */
 		create?: boolean;
-		/** Values echoed back from the server on a validation failure. */
-		values?: DefaultValues;
-		/** Field-level errors from the server on a validation failure. */
-		errors?: FieldErrors;
-		/** Operation tag, surfaced in the submit button label. */
-		operation?: string;
+		/** Result of the create/edit form action from the server, threaded
+		 * via `page.form`. Carries echoed values + per-field errors when a
+		 * validation failure keeps the modal open. */
+		result?: {
+			values?: Record<string, unknown>;
+			errors?: Record<string, string>;
+			operation?: string;
+		};
 	}
 
-	let { application, create = false, values, errors, operation }: Props = $props();
+	let { application, create = false, result }: Props = $props();
 
 	// Local form state. `application` provides the defaults when editing;
-	// `values` is the echo-back from a server-side validation failure.
-	// Per Svelte 5 best practices, we read props once (untracked) at
-	// mount and don't sync live — the form is short-lived inside a
+	// `result.values` is the echo-back from a server-side validation failure.
+	// Per Svelte 5 best practices, we snapshot the props once (untracked)
+	// at mount and don't sync live — the form is short-lived inside a
 	// shallow-routed modal that remounts on each open.
-	const init = (): {
-		company: string;
-		role: string;
-		stage: ApplicationStage;
-		status: ApplicationStatus;
-		workArrangement: WorkArrangement;
-		postingUrl: string;
-		appliedAt: string;
-		tagsRaw: string;
-	} =>
-		untrack(() => ({
-			company: values?.company ?? application?.company ?? '',
-			role: values?.role ?? application?.role ?? '',
-			stage: values?.stage ?? application?.stage ?? 'applied',
-			status: values?.status ?? application?.status ?? 'active',
-			workArrangement: values?.workArrangement ?? application?.workArrangement ?? 'remote',
-			postingUrl: values?.postingUrl ?? application?.postingUrl ?? '',
-			appliedAt:
-				values?.appliedAt ??
-				(application?.appliedAt ? application.appliedAt.slice(0, 10) : '') ??
-				'',
-			tagsRaw: values?.tagsRaw ?? application?.tags?.join(', ') ?? ''
-		}));
-	const initial = init();
+	const initial = untrack(() => {
+		const values = result?.values as
+			| {
+					company?: string;
+					role?: string;
+					stage?: ApplicationStage;
+					status?: ApplicationStatus;
+					workArrangement?: WorkArrangement;
+					postingUrl?: string | null;
+					postingDescription?: string | null;
+					notes?: string | null;
+					resumeId?: string | null;
+					appliedAt?: string | null;
+					nextActionAt?: string | null;
+					tagsRaw?: string;
+					salaryShape?: SalaryShapeValue;
+					salaryCurrency?: string;
+					salaryExact?: string;
+					salaryMin?: string;
+					salaryMax?: string;
+			  }
+			| undefined;
+		const errors = result?.errors as
+			| {
+					company?: string;
+					role?: string;
+					stage?: string;
+					status?: string;
+					workArrangement?: string;
+					salary?: string;
+			  }
+			| undefined;
+		const operation = result?.operation;
 
-	let company = $state(initial.company);
-	let role = $state(initial.role);
-	let stage = $state<ApplicationStage>(initial.stage);
-	let status = $state<ApplicationStatus>(initial.status);
-	let workArrangement = $state<WorkArrangement>(initial.workArrangement);
-	let postingUrl = $state(initial.postingUrl);
-	let appliedAt = $state(initial.appliedAt);
-	let tagsRaw = $state(initial.tagsRaw);
+		// Salary: prefer echo-back values, then existing application salary.
+		const echoSalary: SalaryFormValues | undefined =
+			values?.salaryShape !== undefined
+				? {
+						shape: values.salaryShape,
+						currency: (values.salaryCurrency as SalaryFormValues['currency']) ?? 'USD',
+						exact: values.salaryExact ?? '',
+						min: values.salaryMin ?? '',
+						max: values.salaryMax ?? ''
+					}
+				: undefined;
+		const salaryDefaults = echoSalary ?? defaultSalaryFormValues(application?.salary ?? null);
+
+		return {
+			values,
+			errors,
+			operation,
+			form: {
+				company: values?.company ?? application?.company ?? '',
+				role: values?.role ?? application?.role ?? '',
+				stage: values?.stage ?? application?.stage ?? 'applied',
+				status: values?.status ?? application?.status ?? 'active',
+				postingUrl: values?.postingUrl ?? application?.postingUrl ?? '',
+				postingDescription: values?.postingDescription ?? application?.postingDescription ?? '',
+				notes: values?.notes ?? application?.notes ?? '',
+				resumeId: values?.resumeId ?? application?.resumeId ?? '',
+				workArrangement: values?.workArrangement ?? application?.workArrangement ?? 'remote',
+				appliedAt: values?.appliedAt ?? toDateInputValue(application?.appliedAt),
+				nextActionAt: values?.nextActionAt ?? toDateInputValue(application?.nextActionAt),
+				tagsRaw: values?.tagsRaw ?? application?.tags?.join(', ') ?? '',
+				salary: salaryDefaults
+			}
+		};
+	});
+
+	const { errors, operation } = initial;
+	const form = initial.form;
+
+	let company = $state(form.company);
+	let role = $state(form.role);
+	let stage = $state<ApplicationStage>(form.stage);
+	let status = $state<ApplicationStatus>(form.status);
+	let workArrangement = $state<WorkArrangement>(form.workArrangement);
+	let postingUrl = $state(form.postingUrl);
+	let postingDescription = $state(form.postingDescription);
+	let notes = $state(form.notes);
+	let resumeId = $state(form.resumeId);
+	let appliedAt = $state(form.appliedAt);
+	let nextActionAt = $state(form.nextActionAt);
+	let tagsRaw = $state(form.tagsRaw);
+
+	// Salary fields: shape controls which amount inputs render.
+	let salaryShape = $state<SalaryShapeValue>(form.salary.shape);
+	let salaryCurrency = $state(form.salary.currency);
+	let salaryExact = $state(form.salary.exact);
+	let salaryMin = $state(form.salary.min);
+	let salaryMax = $state(form.salary.max);
 
 	// Tags input is free-form; lowercase-hyphenated per design.
 	// Normalize on blur so the user sees immediate feedback.
@@ -94,9 +142,18 @@
 	}
 
 	const formError = $derived(
-		errors?.company || errors?.role || errors?.stage || errors?.status || errors?.workArrangement
+		errors?.company ||
+			errors?.role ||
+			errors?.stage ||
+			errors?.status ||
+			errors?.workArrangement ||
+			errors?.salary
 	);
 	const isBusy = $derived(operation === 'create' || operation === 'edit');
+
+	const inputClass =
+		'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+	const labelClass = 'block text-sm font-medium text-fg';
 </script>
 
 <form
@@ -117,7 +174,7 @@
 	<!-- Company + Role -->
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<div class="space-y-1.5">
-			<label for="app-company" class="block text-sm font-medium text-fg">Company</label>
+			<label for="app-company" class={labelClass}>Company</label>
 			<input
 				id="app-company"
 				name="company"
@@ -126,7 +183,7 @@
 				bind:value={company}
 				aria-invalid={errors?.company ? 'true' : undefined}
 				aria-describedby={errors?.company ? 'app-company-error' : undefined}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				class={inputClass}
 				class:border-danger={errors?.company}
 			/>
 			{#if errors?.company}
@@ -135,7 +192,7 @@
 		</div>
 
 		<div class="space-y-1.5">
-			<label for="app-role" class="block text-sm font-medium text-fg">Role</label>
+			<label for="app-role" class={labelClass}>Role</label>
 			<input
 				id="app-role"
 				name="role"
@@ -144,7 +201,7 @@
 				bind:value={role}
 				aria-invalid={errors?.role ? 'true' : undefined}
 				aria-describedby={errors?.role ? 'app-role-error' : undefined}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				class={inputClass}
 				class:border-danger={errors?.role}
 			/>
 			{#if errors?.role}
@@ -156,13 +213,8 @@
 	<!-- Stage + Status + Work arrangement -->
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
 		<div class="space-y-1.5">
-			<label for="app-stage" class="block text-sm font-medium text-fg">Stage</label>
-			<select
-				id="app-stage"
-				name="stage"
-				bind:value={stage}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-			>
+			<label for="app-stage" class={labelClass}>Stage</label>
+			<select id="app-stage" name="stage" bind:value={stage} class={inputClass}>
 				{#each STAGES as s (s.value)}
 					<option value={s.value}>{s.label}</option>
 				{/each}
@@ -170,13 +222,8 @@
 		</div>
 
 		<div class="space-y-1.5">
-			<label for="app-status" class="block text-sm font-medium text-fg">Status</label>
-			<select
-				id="app-status"
-				name="status"
-				bind:value={status}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-			>
+			<label for="app-status" class={labelClass}>Status</label>
+			<select id="app-status" name="status" bind:value={status} class={inputClass}>
 				{#each STATUSES as s (s.value)}
 					<option value={s.value}>{s.label}</option>
 				{/each}
@@ -184,13 +231,8 @@
 		</div>
 
 		<div class="space-y-1.5">
-			<label for="app-arr" class="block text-sm font-medium text-fg">Work</label>
-			<select
-				id="app-arr"
-				name="workArrangement"
-				bind:value={workArrangement}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-			>
+			<label for="app-arr" class={labelClass}>Work</label>
+			<select id="app-arr" name="workArrangement" bind:value={workArrangement} class={inputClass}>
 				{#each ARRANGEMENTS as a (a.value)}
 					<option value={a.value}>{a.label}</option>
 				{/each}
@@ -198,35 +240,99 @@
 		</div>
 	</div>
 
-	<!-- Posting URL + Applied date -->
+	<!-- Applied date + Next action date -->
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 		<div class="space-y-1.5">
-			<label for="app-url" class="block text-sm font-medium text-fg">Posting URL</label>
-			<input
-				id="app-url"
-				name="postingUrl"
-				type="url"
-				bind:value={postingUrl}
-				placeholder="https://"
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-			/>
-		</div>
-
-		<div class="space-y-1.5">
-			<label for="app-applied" class="block text-sm font-medium text-fg">Applied date</label>
+			<label for="app-applied" class={labelClass}>Applied date</label>
 			<input
 				id="app-applied"
 				name="appliedAt"
 				type="date"
 				bind:value={appliedAt}
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				class={inputClass}
 			/>
+		</div>
+
+		<div class="space-y-1.5">
+			<label for="app-next-action" class={labelClass}>Next action date</label>
+			<input
+				id="app-next-action"
+				name="nextActionAt"
+				type="date"
+				bind:value={nextActionAt}
+				class={inputClass}
+			/>
+			<p class="text-xs text-muted">Drives "Interviews next 30 days" KPI and sort.</p>
 		</div>
 	</div>
 
+	<!-- Posting URL -->
+	<div class="space-y-1.5">
+		<label for="app-url" class={labelClass}>Posting URL</label>
+		<input
+			id="app-url"
+			name="postingUrl"
+			type="url"
+			bind:value={postingUrl}
+			placeholder="https://"
+			class="{inputClass} placeholder:text-muted"
+		/>
+	</div>
+
+	<!-- Posting description -->
+	<div class="space-y-1.5">
+		<label for="app-posting-desc" class={labelClass}>Posting description</label>
+		<textarea
+			id="app-posting-desc"
+			name="postingDescription"
+			bind:value={postingDescription}
+			placeholder="Optional job description text"
+			rows="3"
+			class="{inputClass} placeholder:text-muted"></textarea>
+	</div>
+
+	<!-- Notes -->
+	<div class="space-y-1.5">
+		<label for="app-notes" class={labelClass}>Notes</label>
+		<textarea
+			id="app-notes"
+			name="notes"
+			bind:value={notes}
+			placeholder="Anything you want to remember about this application"
+			rows="3"
+			class="{inputClass} placeholder:text-muted"></textarea>
+	</div>
+
+	<!-- Resume ID (external reference until R2 upload lands) -->
+	<div class="space-y-1.5">
+		<label for="app-resume" class={labelClass}>Resume ID</label>
+		<input
+			id="app-resume"
+			name="resumeId"
+			type="text"
+			bind:value={resumeId}
+			placeholder="resume-acme"
+			class="{inputClass} placeholder:text-muted"
+		/>
+		<p class="text-xs text-muted">
+			External resume key (matches <code class="font-mono">RESUME_URLS</code> until R2 upload lands).
+		</p>
+	</div>
+
+	<!-- Compensation (Modular SalaryInput component) -->
+	<SalaryInput
+		bind:shape={salaryShape}
+		bind:currency={salaryCurrency}
+		bind:exact={salaryExact}
+		bind:min={salaryMin}
+		bind:max={salaryMax}
+		error={errors?.salary}
+		{inputClass}
+	/>
+
 	<!-- Tags -->
 	<div class="space-y-1.5">
-		<label for="app-tags" class="block text-sm font-medium text-fg">Tags</label>
+		<label for="app-tags" class={labelClass}>Tags</label>
 		<input
 			id="app-tags"
 			name="tags"
@@ -234,7 +340,7 @@
 			bind:value={tagsRaw}
 			onblur={() => (tagsRaw = normalizeTags(tagsRaw))}
 			placeholder="remote, fintech, high-priority"
-			class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+			class="{inputClass} placeholder:text-muted"
 		/>
 		<p class="text-xs text-muted">
 			Comma-separated. Lowercase, hyphen-separated (e.g. dream-company).

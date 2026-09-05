@@ -9,12 +9,6 @@
 	// them as plain values breaks that cycle.
 	let openCount = 0;
 	let topId: string | null = null;
-	export function getOpenCount(): number {
-		return openCount;
-	}
-	export function getTopId(): string | null {
-		return topId;
-	}
 </script>
 
 <script lang="ts">

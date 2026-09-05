@@ -9,7 +9,7 @@
 
 import type { Application, KpiCounts } from '$lib/types';
 import { isStageOpen } from '$lib/constants/stages';
-import { daysSince, isThisMonth, isUpcoming } from '$lib/utils/dates';
+import { isThisMonth, isUpcoming } from '$lib/utils/dates';
 
 // Re-export to keep the import surface clean for callers.
 export { isStageOpen };
@@ -66,30 +66,4 @@ export function computeKpis(apps: readonly Application[]): KpiCounts {
 		appliedThisMonth,
 		needsAttention
 	};
-}
-
-/**
- * Group applications by status for the status breakdown (when added in a
- * future round). Not used in Round A but defined now so the schema is
- * stable.
- */
-export function countByStatus(apps: readonly Application[]): Record<string, number> {
-	const counts: Record<string, number> = {};
-	for (const app of apps) {
-		counts[app.status] = (counts[app.status] ?? 0) + 1;
-	}
-	return counts;
-}
-
-/**
- * "Needs attention" sublist: applications whose status is stalled or
- * ghosted. Sorted oldest-first (longest-stalled at the top).
- *
- * Used in Round A's empty-state copy to give the user concrete next
- * steps. Full UI for this list lands in a future round.
- */
-export function needsAttentionList(apps: readonly Application[]): Application[] {
-	return apps
-		.filter((a) => a.status === 'stalled' || a.status === 'ghosted')
-		.sort((a, b) => daysSince(a.stageChangedAt) - daysSince(b.stageChangedAt));
 }

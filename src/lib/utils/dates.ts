@@ -21,34 +21,45 @@ export function daysSince(iso: string | null | undefined): number {
 }
 
 /**
- * Days between two ISO dates. Positive if `a` is earlier, negative if later.
- */
-export function daysBetween(a: string, b: string): number {
-	const aMs = new Date(a).getTime();
-	const bMs = new Date(b).getTime();
-	return Math.round((bMs - aMs) / (1000 * 60 * 60 * 24));
-}
-
-/**
  * Relative-time formatter: "today", "yesterday", "3 days ago", "2 weeks ago".
  * Caps at "~1 year ago" to avoid clutter.
  */
 export function formatRelative(iso: string | null | undefined): string {
 	if (!iso) return '·';
-	const days = daysSince(iso);
-	if (!Number.isFinite(days)) return '·';
-	if (days === 0) return 'today';
-	if (days === 1) return 'yesterday';
-	if (days < 7) return `${days} days ago`;
-	if (days < 30) {
-		const weeks = Math.floor(days / 7);
+	const then = new Date(iso).getTime();
+	if (Number.isNaN(then)) return '·';
+	const diffMs = then - Date.now();
+	const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+	if (diffDays === 0) return 'today';
+	if (diffDays === 1) return 'tomorrow';
+	if (diffDays === -1) return 'yesterday';
+
+	if (diffDays > 0) {
+		if (diffDays < 7) return `in ${diffDays} days`;
+		if (diffDays < 30) {
+			const weeks = Math.floor(diffDays / 7);
+			return weeks === 1 ? 'in 1 week' : `in ${weeks} weeks`;
+		}
+		if (diffDays < 365) {
+			const months = Math.floor(diffDays / 30);
+			return months === 1 ? 'in 1 month' : `in ${months} months`;
+		}
+		const years = Math.floor(diffDays / 365);
+		return years === 1 ? 'in 1 year' : `in ${years} years`;
+	}
+
+	const pastDays = Math.abs(diffDays);
+	if (pastDays < 7) return `${pastDays} days ago`;
+	if (pastDays < 30) {
+		const weeks = Math.floor(pastDays / 7);
 		return weeks === 1 ? '1 week ago' : `${weeks} weeks ago`;
 	}
-	if (days < 365) {
-		const months = Math.floor(days / 30);
+	if (pastDays < 365) {
+		const months = Math.floor(pastDays / 30);
 		return months === 1 ? '1 month ago' : `${months} months ago`;
 	}
-	const years = Math.floor(days / 365);
+	const years = Math.floor(pastDays / 365);
 	return years === 1 ? '1 year ago' : `${years} years ago`;
 }
 

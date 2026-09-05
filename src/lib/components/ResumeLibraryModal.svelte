@@ -5,9 +5,9 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
+	import { RESUME_URLS } from '$lib/constants/resumes';
 	import { formatDateShort, formatRelative } from '$lib/utils/dates';
 	import type { Application } from '$lib/types';
-
 	interface Props {
 		/** All apps with a `resumeId`. Source: dashboard load returns `applications`. */
 		applications: readonly Application[];
@@ -41,14 +41,6 @@
 	// in the backend round. For now we just show the inventory + a
 	// local-only file picker that records the chosen file's metadata
 	// (no upload, no persistence beyond the session).
-	const RESUME_URLS: Record<string, string> = {
-		'resume-acme': 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-		'resume-stripe': 'https://www.africau.edu/images/default/sample.pdf',
-		'resume-figma': 'https://www.orimi.com/pdf-test.pdf',
-		'resume-linear': 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-		'resume-datadog': 'https://www.africau.edu/images/default/sample.pdf',
-		'resume-openai': 'https://www.orimi.com/pdf-test.pdf'
-	};
 
 	type ResumeEntry = {
 		id: string;
@@ -97,7 +89,7 @@
 			pending = null;
 			return;
 		}
-		if (file.size > 10 * 1024 * 1024) {
+		if (file.size > MAX_UPLOAD_BYTES) {
 			uploadError = 'Files must be under 10 MB.';
 			pending = null;
 			return;
@@ -119,6 +111,16 @@
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+	// 10 MB upload ceiling, shared by the validation copy and the input.
+	const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+	// Surfaces the same stub copy the disabled button used to silently swallow.
+	const UPLOAD_STUB_MSG = 'Upload will go to R2 once the backend round lands.';
+
+	function onUploadClick() {
+		// The button is intentionally enabled so the gesture never disappears;
+		// clicking it tells the user the upload is a preview, not silent.
+		uploadError = UPLOAD_STUB_MSG;
 	}
 </script>
 
@@ -163,19 +165,22 @@
 							Remove
 						</button>
 					</div>
+					<!--
+						Upload is a preview until the backend round lands. The
+						button stays enabled so the gesture never disappears;
+						clicking surfaces the same stub message inline via the
+						existing uploadError alert.
+					-->
+
 					<div class="flex justify-end gap-2 pt-1">
 						<Button
 							type="button"
 							variant="primary"
 							size="sm"
-							disabled
+							onclick={onUploadClick}
 							ariaLabel="Upload resume (pending backend round)"
-							onclick={() => {
-								uploadError =
-									'Upload is wired in the backend round. File metadata is captured below; nothing is persisted yet.';
-							}}
 						>
-							Upload (pending backend)
+							Upload
 						</Button>
 					</div>
 				{/if}

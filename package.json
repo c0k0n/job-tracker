@@ -6,12 +6,12 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"check": "svelte-kit sync && wrangler types --check && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync && bunx wrangler types --check && svelte-check --tsconfig ./tsconfig.json",
 		"lint": "prettier --check . && eslint .",
 		"format": "prettier --write .",
-		"types": "wrangler types",
-		"preview": "bun run build && wrangler dev",
-		"deploy": "bun run build && wrangler deploy",
+		"types": "bunx wrangler types",
+		"preview": "bun run build && bunx wrangler dev",
+		"deploy": "bun run build && bunx wrangler deploy",
 		"prepare": "svelte-kit sync || true"
 	},
 	"devDependencies": {

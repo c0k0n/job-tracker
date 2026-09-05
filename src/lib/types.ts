@@ -161,13 +161,7 @@ export interface Contact {
 export interface ActivityEvent {
 	id: string;
 	applicationId: string;
-	kind:
-		| 'created'
-		| 'stage_changed'
-		| 'status_changed'
-		| 'note_added'
-		| 'interview_scheduled'
-		| 'contact_added';
+	kind: 'created' | 'stage_changed' | 'interview_scheduled' | 'status_changed' | 'contact_added';
 	occurredAt: string;
 	fromStage: ApplicationStage | null;
 	toStage: ApplicationStage | null;
@@ -181,6 +175,3 @@ export interface ApplicationDetail {
 	contacts: Contact[];
 	activities: ActivityEvent[];
 }
-
-/** Allowed values for the trash view query param. */
-export type TrashView = 'active' | 'trashed';

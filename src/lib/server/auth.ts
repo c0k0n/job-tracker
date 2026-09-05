@@ -39,7 +39,11 @@ export function getSession(cookies: Cookies): SessionUser | null {
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as SessionUser;
-		if (typeof parsed.id === 'string' && typeof parsed.username === 'string') {
+		if (
+			typeof parsed.id === 'string' &&
+			typeof parsed.username === 'string' &&
+			typeof parsed.email === 'string'
+		) {
 			return parsed;
 		}
 		return null;

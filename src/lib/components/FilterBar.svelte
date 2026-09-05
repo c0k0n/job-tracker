@@ -1,9 +1,17 @@
 <script lang="ts">
-	import type { ApplicationFilters, ApplicationSort, SortKey, SortDir } from '$lib/types';
+	import type {
+		ApplicationFilters,
+		ApplicationSort,
+		ApplicationStage,
+		ApplicationStatus,
+		SortDir,
+		SortKey,
+		WorkArrangement
+	} from '$lib/types';
+	import { hasActiveFilters as hasActiveFiltersUtil, type TagFacet } from '$lib/utils/sortFilter';
 	import { STAGES } from '$lib/constants/stages';
 	import { STATUSES } from '$lib/constants/stages';
 	import { ARRANGEMENTS } from '$lib/constants/stages';
-	import type { TagFacet } from '$lib/utils/sortFilter';
 
 	interface Props {
 		/** Bindable filter state. Parent owns it. */
@@ -40,26 +48,30 @@
 		};
 	});
 
-	function toggleStage(value: (typeof STAGES)[number]['value']) {
+	function toggleStage(value: ApplicationStage) {
 		const has = filters.stages.includes(value);
 		filters = {
 			...filters,
-			stages: has ? filters.stages.filter((v) => v !== value) : [...filters.stages, value]
+			stages: has
+				? filters.stages.filter((v: ApplicationStage) => v !== value)
+				: [...filters.stages, value]
 		};
 	}
-	function toggleStatus(value: (typeof STATUSES)[number]['value']) {
+	function toggleStatus(value: ApplicationStatus) {
 		const has = filters.statuses.includes(value);
 		filters = {
 			...filters,
-			statuses: has ? filters.statuses.filter((v) => v !== value) : [...filters.statuses, value]
+			statuses: has
+				? filters.statuses.filter((v: ApplicationStatus) => v !== value)
+				: [...filters.statuses, value]
 		};
 	}
-	function toggleArrangement(value: (typeof ARRANGEMENTS)[number]['value']) {
+	function toggleArrangement(value: WorkArrangement) {
 		const has = filters.arrangements.includes(value);
 		filters = {
 			...filters,
 			arrangements: has
-				? filters.arrangements.filter((v) => v !== value)
+				? filters.arrangements.filter((v: WorkArrangement) => v !== value)
 				: [...filters.arrangements, value]
 		};
 	}
@@ -67,7 +79,7 @@
 		const has = filters.tags.includes(tag);
 		filters = {
 			...filters,
-			tags: has ? filters.tags.filter((t) => t !== tag) : [...filters.tags, tag]
+			tags: has ? filters.tags.filter((t: string) => t !== tag) : [...filters.tags, tag]
 		};
 	}
 
@@ -89,13 +101,7 @@
 		return sort.key === key ? sort.dir : null;
 	}
 
-	const hasActiveFilters = $derived(
-		filters.q.length > 0 ||
-			filters.stages.length > 0 ||
-			filters.statuses.length > 0 ||
-			filters.arrangements.length > 0 ||
-			filters.tags.length > 0
-	);
+	const hasActiveFilters = $derived(hasActiveFiltersUtil(filters));
 
 	// Auto-hash tag color tokens (per design choice #1 from handoff §11).
 	// We derive a stable hue per tag so the same tag always renders the
@@ -125,10 +131,13 @@
 	}
 	function tagColors(tag: string): { bg: string; fg: string } {
 		const b = nearestBucket(tagHue(tag));
-		// oklch chroma 0.02 keeps these low-key (no AI-purple, no rainbow)
+		// Lightness + chroma come from theme tokens (CSS custom properties)
+		// so the chips adapt to dark mode; only the hue is derived per tag.
+		// Theme sets `--tag-bg-l`, `--tag-bg-c`, `--tag-fg-l`, `--tag-fg-c`
+		// in `layout.css`, with dark overrides.
 		return {
-			bg: `oklch(0.95 0.02 ${b})`,
-			fg: `oklch(0.42 0.12 ${b})`
+			bg: `oklch(var(--tag-bg-l) var(--tag-bg-c) ${b})`,
+			fg: `oklch(var(--tag-fg-l) var(--tag-fg-c) ${b})`
 		};
 	}
 </script>

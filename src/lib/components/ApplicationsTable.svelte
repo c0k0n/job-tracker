@@ -172,32 +172,36 @@
 
 			<tbody class="divide-y divide-border">
 				{#each rows as app (app.id)}
+					<!--
+						Mouse convenience: any non-control click on the row
+						opens the detail modal. Keyboard activation lives on
+						the company button (proper <button>), so this row is
+						NOT role="link" + tabindex="0" (an a11y violation
+						since nested <button>s/forms would make the row
+						announce as both a link AND an interactive container).
+					-->
 					<tr
-						class="cursor-pointer transition-colors focus-within:bg-surface-2 hover:bg-surface-2"
+						class="transition-colors focus-within:bg-surface-2 hover:bg-surface-2"
 						onclick={(e) => {
-							// Ignore clicks that land on interactive controls
-							// (the row-action buttons) — only the row body opens
-							// the detail modal.
+							// Skip clicks that originate inside interactive
+							// controls (the row-action buttons and the open
+							// button in the company cell) — those handle their
+							// own activation.
 							if ((e.target as Element | null)?.closest('button, a, input, select, textarea'))
 								return;
 							onRowClick?.(app);
 						}}
-						tabindex="0"
-						role="link"
-						aria-label="Open {app.company} {app.role}"
-						onkeydown={(e) => {
-							// Keyboard activation only when the row itself is
-							// focused; a focused button handles its own keys.
-							if (e.target !== e.currentTarget) return;
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								onRowClick?.(app);
-							}
-						}}
 					>
 						<td class="px-3 py-3 sm:px-4">
 							<div class="flex items-center gap-2">
-								<div class="font-medium text-fg">{app.company}</div>
+								<button
+									type="button"
+									onclick={() => onRowClick?.(app)}
+									aria-label={`Open ${app.company} ${app.role} details`}
+									class="cursor-pointer text-left font-medium text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+								>
+									{app.company}
+								</button>
 								{#if app.resumeId}
 									<span
 										aria-label="Resume attached"

@@ -128,23 +128,20 @@
 		<ol class="space-y-1.5">
 			{#each funnel as item (item.stage.value)}
 				{@const isFirst = item.prevCount === 0}
-				{@const conv = isFirst
-					? null
-					: item.prevCount === 0
-						? 0
-						: (item.count / item.prevCount) * 100}
-				{@const convLabel = conv === null ? '' : `${conv.toFixed(0)}% of prev`}
+				{@const conv = isFirst ? null : (item.count / item.prevCount) * 100}
+				{@const convPct = conv ?? 0}
+				{@const convLabel = conv === null ? '' : `${convPct.toFixed(0)}% of prev`}
 				<!-- Color the conversion so a sharp drop reads at a glance:
 					healthy → green, some loss → amber, big drop → red. -->
 				{@const convClass = (() => {
 					if (conv === null) return '';
-					if (conv >= 80) return 'text-success';
-					if (conv >= 40) return 'text-status-stalled-700';
+					if (convPct >= 80) return 'text-success';
+					if (convPct >= 40) return 'text-status-stalled-700';
 					return 'text-danger';
 				})()}
 				{@const convTooltip = isFirst
 					? `${item.stage.label}: reached by ${item.count} of ${totalApplications} tracked applications, so ${item.pct.toFixed(0)}%.`
-					: `${item.stage.label}: ${item.count} of the ${item.prevCount} applications that reached the previous stage progressed to at least this stage (${(conv ?? 0).toFixed(0)}%). This is ${item.pct.toFixed(0)}% of all tracked applications.`}
+					: `${item.stage.label}: ${item.count} of the ${item.prevCount} applications that reached the previous stage progressed to at least this stage (${convPct.toFixed(0)}%). This is ${item.pct.toFixed(0)}% of all tracked applications.`}
 				<li class="flex items-center gap-3" title={convTooltip} aria-label={convTooltip}>
 					<!-- Stage label column: fixed width so bars align. -->
 					<span class="w-32 shrink-0 text-right font-mono text-[11px] text-muted uppercase">

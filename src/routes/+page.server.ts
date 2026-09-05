@@ -25,7 +25,7 @@ export const load: PageServerLoad = async ({ locals }) => {
  * D1 land. No call sites above this file need to change.
  */
 export const actions: Actions = {
-	default: async ({ request, cookies }) => {
+	default: async ({ request, cookies, url }) => {
 		const form = await request.formData();
 		const mode = String(form.get('mode') ?? '');
 		const emailOrUsername = String(form.get('emailOrUsername') ?? '').trim();
@@ -83,6 +83,12 @@ export const actions: Actions = {
 			email: emailOrUsername.includes('@') ? emailOrUsername : `${emailOrUsername}@stub.local`
 		});
 
-		throw redirect(303, '/dashboard');
+		// Honor an internal `?next=` (set by the dashboard/admin guards when a
+		// logged-out user hits a protected page) so they land back where they
+		// were. We only accept an origin-relative path — never a scheme/host —
+		// to avoid open-redirect via a crafted `next=https://evil.example`.
+		const next = url.searchParams.get('next') ?? '';
+		const nextPath = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+		throw redirect(303, nextPath);
 	}
 };

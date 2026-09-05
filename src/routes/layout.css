@@ -31,6 +31,17 @@
 	--color-success: oklch(0.5 0.14 150);
 
 	/*
+	 * Tag chip palette. `FilterBar` computes a stable hue per tag and
+	 * plugs it into `oklch(var(--tag-*-l) var(--tag-*-c) <hue>)`. Lightness
+	 * + chroma live here as tokens so the chips follow light/dark mode;
+	 * only the hue is derived per tag at runtime.
+	 */
+	--tag-bg-l: 0.95;
+	--tag-bg-c: 0.02;
+	--tag-fg-l: 0.42;
+	--tag-fg-c: 0.12;
+
+	/*
 	 * Stage colors. Each stage gets a 100 (bg) + 700 (fg) pair so pills and
 	 * progress bars can render in either mode. Kept low-chroma so the page
 	 * doesn't turn into a rainbow — the badges should read as state, not
@@ -75,7 +86,20 @@
 }
 
 /* Honor OS preference until we ship a manual toggle. */
-@custom-variant dark (&:where(.dark, .dark *));
+
+/* Respect users who ask their OS to reduce motion: kill CSS animations,
+   the backdrop blur fade, and the color/background transitions so nothing
+   strobes or slides for them (WCAG AAAA 2.3.3). */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
 
 @media (prefers-color-scheme: dark) {
 	:root:not(.light) {
@@ -122,5 +146,12 @@
 		--color-status-paused-700: oklch(0.82 0.08 270);
 		--color-status-closed-100: oklch(0.25 0.01 0);
 		--color-status-closed-700: oklch(0.75 0.02 0);
+
+		/* Tag chips: darker, lower-chroma backgrounds with brighter text so
+		 * foreground contrast holds on dark surfaces. */
+		--tag-bg-l: 0.28;
+		--tag-bg-c: 0.04;
+		--tag-fg-l: 0.85;
+		--tag-fg-c: 0.11;
 	}
 }

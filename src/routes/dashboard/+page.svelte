@@ -6,7 +6,12 @@
 	import { enhance } from '$app/forms';
 	import type { PageData } from './$types';
 	import type { Application, ApplicationFilters, ApplicationSort, KpiCounts } from '$lib/types';
-	import { applyFilters, applySort, serializeFiltersToUrl } from '$lib/utils/sortFilter';
+	import {
+		applyFilters,
+		applySort,
+		hasActiveFilters,
+		serializeFiltersToUrl
+	} from '$lib/utils/sortFilter';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import ApplicationsTable from '$lib/components/ApplicationsTable.svelte';
@@ -90,13 +95,7 @@
 	const hasApplications = $derived(data.applications.length > 0 && !data.trashView);
 	const hasTrashedApps = $derived(data.trashView && data.applications.length > 0);
 	const hasVisibleRows = $derived(visibleRows.length > 0);
-	const hasActiveFilters = $derived(
-		filters.q.length > 0 ||
-			filters.stages.length > 0 ||
-			filters.statuses.length > 0 ||
-			filters.arrangements.length > 0 ||
-			filters.tags.length > 0
-	);
+	const hasActive = $derived(hasActiveFilters(filters));
 
 	const staleCount = $derived(
 		data.applications.filter((a) => a.status === 'stalled' || a.status === 'ghosted').length
@@ -146,6 +145,26 @@
 
 	let isNewAppOpen = $derived(pageStore.url.searchParams.get('new') === '1');
 
+	// Any modal open → background must be inert so screen readers and the
+	// Tab key can't reach behind the dialog. `inert` is the modern primitive;
+	// `aria-hidden` alone doesn't block focus.
+	const anyModalOpen = $derived(
+		pageStore.url.searchParams.has('app') ||
+			pageStore.url.searchParams.has('new') ||
+			pageStore.url.searchParams.has('resume')
+	);
+
+	// Server-side validation results from the create/edit actions surface
+	// here via `page.form` (progressive enhancement keeps the modal open so
+	// the user can fix the highlighted fields). We only forward a result
+	// that matches the mode of the form it belongs to.
+	const formResult = $derived(pageStore.form);
+	const newAppForm = $derived(
+		formResult && formResult.operation === 'create'
+			? formResult
+			: { values: undefined, errors: undefined, operation: undefined }
+	);
+
 	// The new-app modal is `bind:open` on the derived above, so when it
 	// closes itself (Esc, backdrop, header X) `open` flips without the
 	// URL changing. Strip `?new=` so the URL stays the source of truth
@@ -190,7 +209,11 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
+<div
+	inert={anyModalOpen}
+	aria-hidden={anyModalOpen}
+	class="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:py-10"
+>
 	<!-- Header -->
 	<header class="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-8">
 		<div>
@@ -379,7 +402,7 @@
 			{:else if !hasVisibleRows}
 				<EmptyState
 					title="No applications match these filters"
-					description={hasActiveFilters
+					description={hasActive
 						? 'Try clearing one of the filters or the search box.'
 						: 'Adjust the search to see results.'}
 				/>
@@ -414,7 +437,7 @@
 	bound `open` and an effect strips that query param, so the URL remains
 	the single source of truth (refresh-safe, shareable).
 -->
-<ApplicationDetailModal detail={data.activeDetail} />
+<ApplicationDetailModal detail={data.activeDetail} form={pageStore.form} />
 <ResumeLibraryModal applications={data.applications} />
 <Modal
 	bind:open={isNewAppOpen}
@@ -422,5 +445,5 @@
 	subtitle="Track a new job application."
 	size="lg"
 >
-	<ApplicationForm create />
+	<ApplicationForm create result={newAppForm} />
 </Modal>

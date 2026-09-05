@@ -13,7 +13,10 @@ export default defineConfig(
 		gitignoreResolution: true
 	}),
 
-	globalIgnores(['.svelte-kit/'], 'Ignore SvelteKit generated files'),
+	globalIgnores(
+		['.svelte-kit/', 'worker-configuration.d.ts'],
+		'Ignore SvelteKit generated files and wrangler generated types'
+	),
 
 	js.configs.recommended,
 	ts.configs.recommended,
@@ -43,10 +46,5 @@ export default defineConfig(
 				parser: ts.parser
 			}
 		}
-	},
-	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
 	}
 );

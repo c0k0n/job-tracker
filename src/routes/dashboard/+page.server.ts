@@ -14,6 +14,8 @@ import {
 	updateApplication
 } from '$lib/server/applications-data';
 import { computeKpis } from '$lib/utils/kpis';
+import { parseSalaryFromForm } from '$lib/utils/money';
+
 import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
 import type { ApplicationStage, ApplicationStatus, WorkArrangement } from '$lib/types';
 
@@ -139,14 +141,26 @@ export const actions: Actions = {
 		const status = pickEnum(form, 'status', STATUS_VALUES);
 		const workArrangement = pickEnum(form, 'workArrangement', ARRANGEMENT_VALUES);
 		const postingUrl = String(form.get('postingUrl') ?? '').trim() || null;
+		const postingDescription = String(form.get('postingDescription') ?? '').trim() || null;
+		const notes = String(form.get('notes') ?? '').trim() || null;
+		const resumeId = String(form.get('resumeId') ?? '').trim() || null;
 		const appliedAt = String(form.get('appliedAt') ?? '').trim() || null;
+		const nextActionAt = String(form.get('nextActionAt') ?? '').trim() || null;
 		const tagsRaw = String(form.get('tags') ?? '').trim();
 		const tags = tagsRaw
 			? tagsRaw
 					.split(',')
-					.map((t) => t.trim().toLowerCase())
+					.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
 					.filter(Boolean)
 			: [];
+
+		const { salary, errors: salaryErrors } = parseSalaryFromForm(
+			String(form.get('salaryShape') ?? ''),
+			String(form.get('salaryCurrency') ?? ''),
+			String(form.get('salaryExact') ?? '') || null,
+			String(form.get('salaryMin') ?? '') || null,
+			String(form.get('salaryMax') ?? '') || null
+		);
 
 		const errors: {
 			company?: string;
@@ -154,16 +168,35 @@ export const actions: Actions = {
 			stage?: string;
 			status?: string;
 			workArrangement?: string;
-		} = {};
+			salary?: string;
+		} = { ...salaryErrors };
 		if (!company) errors.company = 'Company is required.';
 		if (!role) errors.role = 'Role is required.';
 		if (!stage) errors.stage = 'Pick a stage.';
 		if (!status) errors.status = 'Pick a status.';
 		if (!workArrangement) errors.workArrangement = 'Pick a work arrangement.';
-		if (Object.keys(errors).length > 0) {
+		if (Object.keys(errors).length > 0 || !stage || !status || !workArrangement) {
 			return fail(400, {
 				operation: 'create',
-				values: { company, role, stage, status, workArrangement, postingUrl, appliedAt, tagsRaw },
+				values: {
+					company,
+					role,
+					stage,
+					status,
+					workArrangement,
+					postingUrl,
+					postingDescription,
+					notes,
+					resumeId,
+					appliedAt,
+					nextActionAt,
+					tagsRaw,
+					salaryShape: String(form.get('salaryShape') ?? ''),
+					salaryCurrency: String(form.get('salaryCurrency') ?? ''),
+					salaryExact: String(form.get('salaryExact') ?? ''),
+					salaryMin: String(form.get('salaryMin') ?? ''),
+					salaryMax: String(form.get('salaryMax') ?? '')
+				},
 				errors
 			});
 		}
@@ -171,16 +204,16 @@ export const actions: Actions = {
 		createApplication(locals.user.id, {
 			company,
 			role,
-			stage: stage!,
-			status: status!,
-			workArrangement: workArrangement!,
-			salary: null,
+			stage,
+			status,
+			workArrangement,
+			salary,
 			postingUrl,
-			postingDescription: null,
-			notes: null,
-			resumeId: null,
+			postingDescription,
+			notes,
+			resumeId,
 			appliedAt,
-			nextActionAt: null,
+			nextActionAt,
 			tags
 		});
 
@@ -203,14 +236,52 @@ export const actions: Actions = {
 		const status = pickEnum(form, 'status', STATUS_VALUES);
 		const workArrangement = pickEnum(form, 'workArrangement', ARRANGEMENT_VALUES);
 		const postingUrl = String(form.get('postingUrl') ?? '').trim() || null;
+		const postingDescription = String(form.get('postingDescription') ?? '').trim() || null;
+		const notes = String(form.get('notes') ?? '').trim() || null;
+		const resumeId = String(form.get('resumeId') ?? '').trim() || null;
 		const appliedAt = String(form.get('appliedAt') ?? '').trim() || null;
+		// Read nextActionAt from form; empty string clears it (user intent), non-empty preserves.
+		const nextActionAt = String(form.get('nextActionAt') ?? '').trim() || null;
 		const tagsRaw = String(form.get('tags') ?? '').trim();
 		const tags = tagsRaw
 			? tagsRaw
 					.split(',')
-					.map((t) => t.trim().toLowerCase())
+					.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
 					.filter(Boolean)
 			: undefined;
+		const { salary, errors: salaryErrors } = parseSalaryFromForm(
+			String(form.get('salaryShape') ?? ''),
+			String(form.get('salaryCurrency') ?? ''),
+			String(form.get('salaryExact') ?? '') || null,
+			String(form.get('salaryMin') ?? '') || null,
+			String(form.get('salaryMax') ?? '') || null
+		);
+
+		if (Object.keys(salaryErrors).length > 0) {
+			return fail(400, {
+				operation: 'edit',
+				values: {
+					company: String(form.get('company') ?? '').trim(),
+					role: String(form.get('role') ?? '').trim(),
+					stage,
+					status,
+					workArrangement,
+					postingUrl,
+					postingDescription,
+					notes,
+					resumeId,
+					appliedAt,
+					nextActionAt,
+					tagsRaw,
+					salaryShape: String(form.get('salaryShape') ?? ''),
+					salaryCurrency: String(form.get('salaryCurrency') ?? ''),
+					salaryExact: String(form.get('salaryExact') ?? ''),
+					salaryMin: String(form.get('salaryMin') ?? ''),
+					salaryMax: String(form.get('salaryMax') ?? '')
+				},
+				errors: salaryErrors
+			});
+		}
 
 		const updated = updateApplication(locals.user.id, id, {
 			company: String(form.get('company') ?? '').trim() || undefined,
@@ -219,8 +290,12 @@ export const actions: Actions = {
 			status: status ?? undefined,
 			workArrangement: workArrangement ?? undefined,
 			postingUrl,
+			postingDescription,
+			notes,
+			resumeId,
 			appliedAt,
-			nextActionAt: null,
+			nextActionAt,
+			salary,
 			tags
 		});
 		if (!updated) return fail(404, { operation: 'edit', errors: { id: 'Not found.' } });
@@ -278,7 +353,12 @@ export const actions: Actions = {
 		const kind = (allowedKinds as readonly string[]).includes(kindRaw)
 			? (kindRaw as (typeof allowedKinds)[number])
 			: null;
-		const scheduledAt = String(form.get('scheduledAt') ?? '').trim();
+		const scheduledAtRaw = String(form.get('scheduledAt') ?? '').trim();
+		const parsedDate = new Date(scheduledAtRaw);
+		const scheduledAt =
+			!Number.isNaN(parsedDate.getTime()) && scheduledAtRaw
+				? parsedDate.toISOString()
+				: scheduledAtRaw;
 		const withName = String(form.get('withName') ?? '').trim() || null;
 		const notes = String(form.get('notes') ?? '').trim() || null;
 
@@ -328,19 +408,5 @@ export const actions: Actions = {
 		});
 		if (!result) return fail(404, { operation: 'addContact', errors: { id: 'Not found.' } });
 		throw redirect(303, '/dashboard');
-	},
-
-	/** Stub for future: load a single application detail. Used by deep-link
-	 * pre-fetching; the modal itself is shallow-routed so it doesn't hit
-	 * this action. Kept so future "fetch on hover" hooks have a clean target.
-	 */
-	getDetail: async ({ request, locals }) => {
-		if (!locals.user) throw redirect(303, '/');
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
-		if (!id) return fail(400, { errors: { id: 'Missing id.' } });
-		const detail = getApplicationDetail(locals.user.id, id, { includeTrashed: true });
-		if (!detail) return fail(404, { errors: { id: 'Not found.' } });
-		return { detail };
 	}
 };

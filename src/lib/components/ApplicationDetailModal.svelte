@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve as resolvePath } from '$app/paths';
-	import { goto, pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { ApplicationDetail } from '$lib/types';
@@ -12,14 +12,23 @@
 	import { formatDateShort, formatRelative, formatDurationInStage } from '$lib/utils/dates';
 	import { formatSalary } from '$lib/utils/money';
 	import { STAGES, STATUSES } from '$lib/constants/stages';
+	import { RESUME_URLS } from '$lib/constants/resumes';
 
 	interface Props {
 		/** Resolved detail bundle for the application currently in the modal.
 		 * Null if the row was deleted / not visible. */
 		detail: ApplicationDetail | null;
+		/** Latest form-action result from the dashboard page (`page.form`).
+		 * Forwarded to the edit ApplicationForm so server-side validation
+		 * errors for the `edit` action surface above the fields. */
+		form?: {
+			operation?: string;
+			values?: Record<string, unknown>;
+			errors?: Record<string, string>;
+		} | null;
 	}
 
-	let { detail }: Props = $props();
+	let { detail, form }: Props = $props();
 
 	type Tab = 'overview' | 'interviews' | 'contacts' | 'activity';
 	let activeTab = $state<Tab>('overview');
@@ -42,7 +51,7 @@
 		if (!sp.has('app')) return;
 		sp.delete('app');
 		const qs = sp.toString();
-		const next = (qs ? `/dashboard?\${qs}` : '/dashboard') as `/\${string}`;
+		const next = (qs ? `/dashboard?${qs}` : '/dashboard') as `/${string}`;
 		void goto(resolvePath(next), {
 			replaceState: true,
 			keepFocus: true,
@@ -66,14 +75,6 @@
 	// Resume viewer is gated on having a resumeId. Round C shows an
 	// inline iframe pointing at a stub URL; R2 upload lands in the
 	// backend round.
-	const RESUME_URLS: Record<string, string> = {
-		'resume-acme': 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-		'resume-stripe': 'https://www.africau.edu/images/default/sample.pdf',
-		'resume-figma': 'https://www.orimi.com/pdf-test.pdf',
-		'resume-linear': 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-		'resume-datadog': 'https://www.africau.edu/images/default/sample.pdf',
-		'resume-openai': 'https://www.orimi.com/pdf-test.pdf'
-	};
 	const resumeUrl = $derived(app?.resumeId ? (RESUME_URLS[app.resumeId] ?? null) : null);
 
 	const stageMeta = $derived(app ? STAGES.find((s) => s.value === app.stage) : null);
@@ -99,21 +100,6 @@
 		`cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
 			activeTab === tab ? 'bg-accent text-accent-fg' : 'text-muted hover:bg-surface-2 hover:text-fg'
 		}`;
-
-	// `openFromRow` is exposed as a global window function so the dashboard
-	// row's click handler (defined outside this component) can call into
-	// the modal's pushState flow without prop drilling. This is a tiny,
-	// scoped escape hatch — not a long-term API surface.
-	if (typeof window !== 'undefined') {
-		(window as unknown as { __openAppDetail?: (id: string) => void }).__openAppDetail = (
-			id: string
-		) => void pushState('', { appId: id });
-	}
-
-	// Reference unused imports for the type info they provide via the
-	// template; this also keeps the noUnusedLocals check honest.
-	void STAGES;
-	void STATUSES;
 </script>
 
 <Modal
@@ -222,6 +208,21 @@
 							<div class="font-mono text-[10px] tracking-widest text-muted uppercase">Applied</div>
 							<div class="mt-1 text-sm text-fg" title={formatDateShort(app.appliedAt)}>
 								{formatRelative(app.appliedAt)}
+							</div>
+						</div>
+						<div>
+							<div class="font-mono text-[10px] tracking-widest text-muted uppercase">
+								Next action
+							</div>
+							<div
+								class="mt-1 text-sm text-fg"
+								title={app.nextActionAt ? formatDateShort(app.nextActionAt) : ''}
+							>
+								{#if app.nextActionAt}
+									{formatRelative(app.nextActionAt)}
+								{:else}
+									<span class="text-muted/60">·</span>
+								{/if}
 							</div>
 						</div>
 						<div>
@@ -590,7 +591,7 @@
 				<h3 class="mb-3 font-mono text-[11px] tracking-widest text-muted uppercase">
 					Edit details
 				</h3>
-				<ApplicationForm {application} />
+				<ApplicationForm {application} result={form?.operation === 'edit' ? form : undefined} />
 			</div>
 		{/if}
 	{/if}

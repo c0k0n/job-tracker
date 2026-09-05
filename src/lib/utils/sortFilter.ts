@@ -7,7 +7,14 @@
  * `data.filters`.
  */
 
-import type { Application, ApplicationFilters, ApplicationSort } from '$lib/types';
+import type {
+	Application,
+	ApplicationFilters,
+	ApplicationSort,
+	SortKey,
+	WorkArrangement
+} from '$lib/types';
+import { ARRANGEMENT_BY_VALUE } from '$lib/constants/stages';
 
 /**
  * Apply the current filter set to a list of applications.
@@ -161,7 +168,10 @@ export function parseFiltersFromUrl(searchParams: URLSearchParams): {
 		? (arrCsv
 				.split(',')
 				.map((s) => s.trim())
-				.filter(Boolean) as ApplicationFilters['arrangements'])
+				.filter(Boolean)
+				.filter(
+					(a): a is WorkArrangement => a in ARRANGEMENT_BY_VALUE
+				) as ApplicationFilters['arrangements'])
 		: [];
 
 	const tagsCsv = searchParams.get('tag') ?? '';
@@ -174,13 +184,25 @@ export function parseFiltersFromUrl(searchParams: URLSearchParams): {
 				.filter(Boolean)
 		: [];
 
-	const sortKey = searchParams.get('sort') ?? 'stageChangedAt';
+	const rawSortKey = searchParams.get('sort') ?? 'stageChangedAt';
+	const ALLOWED_SORT_KEYS: readonly SortKey[] = [
+		'company',
+		'role',
+		'stage',
+		'status',
+		'appliedAt',
+		'stageChangedAt',
+		'nextActionAt'
+	];
+	const sortKey: SortKey = (ALLOWED_SORT_KEYS as readonly string[]).includes(rawSortKey)
+		? (rawSortKey as SortKey)
+		: 'stageChangedAt';
 	const sortDirRaw = searchParams.get('dir') ?? 'desc';
 	const sortDir: 'asc' | 'desc' = sortDirRaw === 'asc' ? 'asc' : 'desc';
 
 	return {
 		filters: { q, stages, statuses, arrangements, tags },
-		sort: { key: sortKey as ApplicationSort['key'], dir: sortDir }
+		sort: { key: sortKey, dir: sortDir }
 	};
 }
 

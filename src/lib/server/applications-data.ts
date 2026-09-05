@@ -28,7 +28,6 @@ import type {
 	ApplicationStage,
 	ApplicationStatus,
 	Contact,
-	CurrencyCode,
 	Interview,
 	Salary,
 	WorkArrangement
@@ -419,8 +418,7 @@ function getStore(): Store {
 /**
  * Seed a minimal activity timeline for a freshly materialized fixture so
  * the Activity tab has something to render. Only `created` + `stage_changed`
- * events for the current stage. Round C: keep this deterministic so the
- * Playwright tests can assert specific counts.
+ * events for the current stage.
  */
 function seedActivities(store: Store, app: Application): void {
 	const events: ActivityEvent[] = [
@@ -483,13 +481,6 @@ export function getApplicationsForUser(
 /**Return only the soft-deleted rows for a user (trash view).*/
 export function listTrashedForUser(userId: string): Application[] {
 	return getApplicationsForUser(userId, { onlyTrashed: true });
-}
-
-export function getApplicationById(userId: string, id: string): Application | null {
-	const store = getStore();
-	const app = store.apps.get(id);
-	if (!app || app.userId !== userId) return null;
-	return app;
 }
 
 /**
@@ -580,6 +571,21 @@ export function updateApplication(
 			fromStage: existing.stage,
 			toStage: patch.stage,
 			note: null
+		});
+		store.activities.set(id, events);
+	}
+
+	// Append a status_changed activity event when status transitions.
+	if (patch.status && patch.status !== existing.status) {
+		const events = store.activities.get(id) ?? [];
+		events.push({
+			id: `${id}-evt-${events.length}`,
+			applicationId: id,
+			kind: 'status_changed',
+			occurredAt: next.updatedAt,
+			fromStage: null,
+			toStage: null,
+			note: `Status changed from ${existing.status} to ${patch.status}`
 		});
 		store.activities.set(id, events);
 	}
@@ -701,11 +707,3 @@ export function addContact(
 	store.activities.set(applicationId, events);
 	return contact;
 }
-
-/**Reset the in-memory store back to the fixture defaults.*/
-export function resetStore(): void {
-	const g = globalThis as unknown as Record<symbol, Store | undefined>;
-	delete g[STORE_KEY];
-}
-
-export type { CurrencyCode };
