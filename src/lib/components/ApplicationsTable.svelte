@@ -34,6 +34,10 @@
 		if (sort.key !== key) return 'none';
 		return sort.dir === 'asc' ? 'ascending' : 'descending';
 	}
+
+	// How many tags to show before collapsing into a "+N" tail.
+	// We picked 3 to keep the cell a single line on most viewports.
+	const TAGS_VISIBLE = 3;
 </script>
 
 <div class="overflow-hidden rounded-lg border border-border bg-surface">
@@ -84,6 +88,12 @@
 						class="hidden px-3 py-2.5 font-mono text-[11px] tracking-widest text-muted uppercase sm:px-4 md:table-cell"
 					>
 						Status
+					</th>
+					<th
+						scope="col"
+						class="hidden px-3 py-2.5 font-mono text-[11px] tracking-widest text-muted uppercase sm:px-4 lg:table-cell"
+					>
+						Tags
 					</th>
 					<th
 						scope="col"
@@ -199,6 +209,30 @@
 						<td class="hidden px-3 py-3 sm:px-4 md:table-cell">
 							<StatusBadge kind="status" value={app.status} />
 						</td>
+						<td class="hidden px-3 py-3 sm:px-4 lg:table-cell">
+							{#if app.tags.length === 0}
+								<span class="text-xs text-muted/60">·</span>
+							{:else}
+								<div class="flex flex-wrap gap-1">
+									{#each app.tags.slice(0, TAGS_VISIBLE) as tag (tag)}
+										<span
+											class="inline-flex items-center rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px] tracking-wide text-muted"
+											title={tag}
+										>
+											{tag}
+										</span>
+									{/each}
+									{#if app.tags.length > TAGS_VISIBLE}
+										<span
+											class="inline-flex items-center font-mono text-[10px] text-muted/70"
+											title={app.tags.slice(TAGS_VISIBLE).join(', ')}
+										>
+											+{app.tags.length - TAGS_VISIBLE}
+										</span>
+									{/if}
+								</div>
+							{/if}
+						</td>
 						<td class="hidden px-3 py-3 text-xs text-muted sm:px-4 md:table-cell">
 							<StatusBadge kind="arrangement" value={app.workArrangement} />
 						</td>
@@ -221,7 +255,7 @@
 							{#if app.nextActionAt}
 								{formatRelative(app.nextActionAt)}
 							{:else}
-								<span class="text-muted/60">—</span>
+								<span class="text-muted/60">·</span>
 							{/if}
 						</td>
 					</tr>

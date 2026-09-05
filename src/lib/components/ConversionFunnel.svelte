@@ -48,10 +48,17 @@
 		'stage-closed': 'text-stage-closed-700'
 	};
 
-	const funnel = $derived.by(() => {
+	type FunnelRow = {
+		stage: (typeof STAGES)[number];
+		count: number;
+		pct: number;
+		prevCount: number; // count at the previous open stage (0 for the first row)
+	};
+
+	const funnel: FunnelRow[] = $derived.by(() => {
 		// Count apps whose current stage is at or past this index.
 		// "saved" doesn't count toward any open funnel stage.
-		const counts: { stage: (typeof STAGES)[number]; count: number; pct: number }[] = [];
+		const rows: FunnelRow[] = [];
 		const openStages = STAGES.filter((s) => s.value !== 'saved');
 
 		const total = apps.filter((a) => a.stage !== 'saved').length;
@@ -68,13 +75,19 @@
 				}
 				return aIdx >= stageIdx;
 			}).length;
-			counts.push({
+			// prevCount is the count of the previous row, or 0 for the first
+			// row. We hoist it out of the template so the conversion math
+			// doesn't fight `noUncheckedIndexedAccess` (funnel[i-1] would
+			// otherwise be `FunnelRow | undefined` inside the each block).
+			const prevCount = rows.length === 0 ? 0 : (rows[rows.length - 1]?.count ?? 0);
+			rows.push({
 				stage,
 				count,
-				pct: total === 0 ? 0 : (count / total) * 100
+				pct: total === 0 ? 0 : (count / total) * 100,
+				prevCount
 			});
 		}
-		return counts;
+		return rows;
 	});
 
 	const totalApplications = $derived(apps.filter((a) => a.stage !== 'saved').length);
@@ -113,7 +126,13 @@
 			when there's room; outside when the bar is too thin.
 		-->
 		<ol class="space-y-1.5">
-			{#each funnel as item, i (item.stage.value)}
+			{#each funnel as item (item.stage.value)}
+				{@const isFirst = item.prevCount === 0}
+				{@const conv = isFirst
+					? null
+					: item.prevCount === 0
+						? 0
+						: (item.count / item.prevCount) * 100}
 				<li
 					class="flex items-center gap-3"
 					aria-label={`${item.stage.label}: ${item.count} of ${totalApplications} (${item.pct.toFixed(0)} percent)`}
@@ -151,15 +170,14 @@
 						Pct + drop-off vs. previous. We show the cumulative
 						percentage (of total) AND the conversion from the
 						previous stage, so the user can see the drop at each
-						gate.
+						gate. The first row has no previous stage, so it
+						just shows the cumulative pct.
 					-->
 					<span
 						class="hidden w-28 shrink-0 text-right font-mono text-[11px] tabular-nums sm:inline"
 					>
 						<span class="text-fg">{item.pct.toFixed(0)}%</span>
-						{#if i > 0 && funnel[i - 1]}
-							{@const prev = funnel[i - 1]!}
-							{@const conv = prev.count === 0 ? 0 : (item.count / prev.count) * 100}
+						{#if conv !== null}
 							<span class="ml-1 text-muted">· {conv.toFixed(0)}% conv</span>
 						{/if}
 					</span>

@@ -53,10 +53,10 @@ function formatCompactAmount(amount: number, currencyCode: keyof typeof CURRENCY
 
 /**
  * Public API. Returns a short string suitable for table cells and
- * chips. Returns "—" when the salary is null.
+ * chips. Returns middle-dot when the salary is null.
  */
 export function formatSalary(salary: Salary | null): string {
-	if (!salary) return '—';
+	if (!salary) return '·';
 	const meta = CURRENCY_BY_CODE[salary.currency];
 
 	switch (salary.shape) {

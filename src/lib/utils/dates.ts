@@ -34,9 +34,9 @@ export function daysBetween(a: string, b: string): number {
  * Caps at "~1 year ago" to avoid clutter.
  */
 export function formatRelative(iso: string | null | undefined): string {
-	if (!iso) return '—';
+	if (!iso) return '·';
 	const days = daysSince(iso);
-	if (!Number.isFinite(days)) return '—';
+	if (!Number.isFinite(days)) return '·';
 	if (days === 0) return 'today';
 	if (days === 1) return 'yesterday';
 	if (days < 7) return `${days} days ago`;
@@ -63,19 +63,19 @@ const DATE_FMT = new Intl.DateTimeFormat('en-US', {
 });
 
 export function formatDateShort(iso: string | null | undefined): string {
-	if (!iso) return '—';
+	if (!iso) return '·';
 	const d = new Date(iso);
-	if (Number.isNaN(d.getTime())) return '—';
+	if (Number.isNaN(d.getTime())) return '·';
 	return DATE_FMT.format(d);
 }
 
 /**
  * Days-in-stage display: "3 days" (1-30), "2 months" (31-365), "1y+".
- * Returns "—" if `stageChangedAt` is missing.
+ * Returns middle-dot if `stageChangedAt` is missing.
  */
 export function formatDurationInStage(stageChangedAt: string | null | undefined): string {
 	const days = daysSince(stageChangedAt);
-	if (!Number.isFinite(days)) return '—';
+	if (!Number.isFinite(days)) return '·';
 	if (days === 0) return 'today';
 	if (days === 1) return '1 day';
 	if (days < 30) return `${days} days`;

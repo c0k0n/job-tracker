@@ -18,6 +18,9 @@
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
+	import StageActivityHeatmap from '$lib/components/StageActivityHeatmap.svelte';
+	import VelocityChart from '$lib/components/VelocityChart.svelte';
+	import ConversionFunnel from '$lib/components/ConversionFunnel.svelte';
 
 	let { data }: { data: PageData } = $props();
 
@@ -110,7 +113,8 @@
 		filters.q.length > 0 ||
 			filters.stages.length > 0 ||
 			filters.statuses.length > 0 ||
-			filters.arrangements.length > 0
+			filters.arrangements.length > 0 ||
+			filters.tags.length > 0
 	);
 
 	const staleCount = $derived(
@@ -138,7 +142,7 @@
 	});
 	const needsAttentionSublabel = $derived.by(() => {
 		if (kpis.needsAttention === 0) return 'All applications have fresh signals';
-		return `Stalled or ghosted — consider following up`;
+		return `Stalled or ghosted: consider following up`;
 	});
 
 	// Per-row click handler. In Round A we just log it; Round C wires
@@ -257,6 +261,27 @@
 		</div>
 	</section>
 
+	<!--
+		Insights (Round B). Three independent visualizations, each handles
+		its own empty state, so the section doesn't need a wrapper
+		empty-state. Layout: heatmap + velocity side-by-side on `lg+`,
+		funnel full-width below. Mobile stack order is intentional:
+		heatmap (historical context) → velocity (recent activity) → funnel
+		(progression shape). Only rendered when the user has any data.
+	-->
+	{#if hasApplications}
+		<section class="mt-6 sm:mt-8" aria-labelledby="insights-heading">
+			<h2 id="insights-heading" class="text-sm font-medium text-fg">Insights</h2>
+			<div class="mt-3 grid gap-3 sm:gap-4 lg:grid-cols-2">
+				<StageActivityHeatmap apps={data.applications} />
+				<VelocityChart apps={data.applications} />
+			</div>
+			<div class="mt-3 sm:mt-4">
+				<ConversionFunnel apps={data.applications} />
+			</div>
+		</section>
+	{/if}
+
 	<!-- Filters + table -->
 	<section class="mt-6 sm:mt-8" aria-labelledby="applications-heading">
 		<div class="flex flex-wrap items-end justify-between gap-3">
@@ -275,7 +300,7 @@
 
 		{#if hasApplications}
 			<div class="mt-4">
-				<FilterBar bind:filters bind:sort {hasApplications} />
+				<FilterBar bind:filters bind:sort {hasApplications} tagFacets={data.tagFacets} />
 			</div>
 		{/if}
 
@@ -323,11 +348,11 @@
 	</section>
 
 	<!--
-		Footer with future-round affordances. The detail-modal, full charts,
-		sharing, and CSV export land in Round B/C. We leave a small hint here
-		so the user knows the dashboard will keep growing.
+		Footer. Round C lands here: application detail modal, sharing,
+		admin approvals, CSV export. We keep the hint small so the user
+		knows the dashboard will keep growing.
 	-->
 	<footer class="mt-12 border-t border-border pt-4 text-xs text-muted">
-		<p>Charts, application detail, sharing, and CSV export are on the way — this is Round A.</p>
+		<p>Application detail, sharing, and CSV export are on the way. This is Round C.</p>
 	</footer>
 </div>

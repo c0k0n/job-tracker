@@ -3,7 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { clearSession } from '$lib/server/auth';
 import { getApplicationsForUser } from '$lib/server/applications-data';
 import { computeKpis, countByStage } from '$lib/utils/kpis';
-import { parseFiltersFromUrl } from '$lib/utils/sortFilter';
+import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
 
 /**
  * Dashboard server load.
@@ -37,7 +37,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		kpis,
 		stageCounts,
 		filters,
-		sort
+		sort,
+		tagFacets: tagFacetsFor(applications)
 	};
 };
 

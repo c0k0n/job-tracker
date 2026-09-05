@@ -48,6 +48,17 @@
 		if (max === 0) return 0;
 		return Math.min(1, count / max);
 	}
+
+	// Cell background color. The lightness drops with intensity (busier
+	// weeks get darker cells); the chroma grows with intensity so busy
+	// weeks actually pop on a light background. Hue locked to 250 (cool
+	// blue) so the heatmap never reads as AI-purple.
+	function cellColor(count: number, heat: number): string {
+		if (count === 0) return 'oklch(0.96 0.005 250)';
+		const l = 0.7 - heat * 0.32;
+		const c = 0.06 + heat * 0.14;
+		return `oklch(${l.toFixed(3)} ${c.toFixed(3)} 250)`;
+	}
 </script>
 
 {#if totalCount === 0}
@@ -93,12 +104,11 @@
 			class="flex h-10 w-full gap-1"
 		>
 			{#each buckets as bucket, i (i)}
+				{@const heat = intensity(bucket.count, maxCount)}
 				<div
 					class="flex-1 rounded-sm"
-					title="{bucket.count} stage {bucket.count === 1
-						? 'change'
-						: 'changes'} around {bucket.daysAgo} days ago"
-					style:background-color="oklch(0.97 {intensity(bucket.count, maxCount) * 0.06} 250)"
+					title={`${bucket.count} stage ${bucket.count === 1 ? 'change' : 'changes'} around ${bucket.daysAgo} days ago`}
+					style:background-color={cellColor(bucket.count, heat)}
 				></div>
 			{/each}
 		</div>

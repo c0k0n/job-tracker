@@ -3,6 +3,7 @@
 	import { STAGES } from '$lib/constants/stages';
 	import { STATUSES } from '$lib/constants/stages';
 	import { ARRANGEMENTS } from '$lib/constants/stages';
+	import type { TagFacet } from '$lib/utils/sortFilter';
 
 	interface Props {
 		/** Bindable filter state. Parent owns it. */
@@ -12,9 +13,12 @@
 		/** When true, "Add your first application" empty-state hides the
 		 * filter bar. When false, the filter bar always shows. */
 		hasApplications: boolean;
+		/** Tag facet list (tag name + count), sorted by frequency desc.
+		 * Renders one chip per tag; click toggles in filters.tags. */
+		tagFacets: TagFacet[];
 	}
 
-	let { filters = $bindable(), sort = $bindable(), hasApplications }: Props = $props();
+	let { filters = $bindable(), sort = $bindable(), hasApplications, tagFacets }: Props = $props();
 
 	let queryInput = $state(filters.q);
 
@@ -59,6 +63,13 @@
 				: [...filters.arrangements, value]
 		};
 	}
+	function toggleTag(tag: string) {
+		const has = filters.tags.includes(tag);
+		filters = {
+			...filters,
+			tags: has ? filters.tags.filter((t) => t !== tag) : [...filters.tags, tag]
+		};
+	}
 
 	function clearAll() {
 		filters = { q: '', stages: [], statuses: [], arrangements: [], tags: [] };
@@ -82,8 +93,44 @@
 		filters.q.length > 0 ||
 			filters.stages.length > 0 ||
 			filters.statuses.length > 0 ||
-			filters.arrangements.length > 0
+			filters.arrangements.length > 0 ||
+			filters.tags.length > 0
 	);
+
+	// Auto-hash tag color tokens (per design choice #1 from handoff §11).
+	// We derive a stable hue per tag so the same tag always renders the
+	// same color. The hue is snapped to one of six low-chroma oklch
+	// buckets so the palette stays tight — prevents an accidental
+	// rainbow when many tags exist. Token literals are kept in source so
+	// Tailwind v4's scanner sees them verbatim.
+	function tagHue(tag: string): number {
+		let h = 0;
+		for (let i = 0; i < tag.length; i++) {
+			h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+		}
+		return h % 360;
+	}
+	const TAG_BUCKETS = [0, 60, 120, 180, 240, 300] as const;
+	function nearestBucket(hue: number): number {
+		let best: number = TAG_BUCKETS[0]!;
+		let bestDist: number = Math.abs(hue - best);
+		for (const b of TAG_BUCKETS) {
+			const d: number = Math.abs(hue - b);
+			if (d < bestDist) {
+				bestDist = d;
+				best = b;
+			}
+		}
+		return best;
+	}
+	function tagColors(tag: string): { bg: string; fg: string } {
+		const b = nearestBucket(tagHue(tag));
+		// oklch chroma 0.02 keeps these low-key (no AI-purple, no rainbow)
+		return {
+			bg: `oklch(0.95 0.02 ${b})`,
+			fg: `oklch(0.42 0.12 ${b})`
+		};
+	}
 </script>
 
 {#if hasApplications}
@@ -190,6 +237,42 @@
 				{/each}
 			</div>
 		</div>
+
+		<!--
+			Tags chips. Hidden when the user has zero tags in their dataset —
+			showing an empty "Tags" group would just be visual noise. The
+			auto-hashed low-chroma palette (per design choice #1) keeps the
+			dashboard from turning into a rainbow even when many tags exist.
+		-->
+		{#if tagFacets.length > 0}
+			<div class="mt-4">
+				<h3 class="font-mono text-[10px] tracking-widest text-muted uppercase">Tags</h3>
+				<div class="mt-2 flex flex-wrap gap-1.5">
+					{#each tagFacets as facet (facet.tag)}
+						{@const active = filters.tags.includes(facet.tag)}
+						{@const colors = tagColors(facet.tag)}
+						<button
+							type="button"
+							onclick={() => toggleTag(facet.tag)}
+							aria-pressed={active}
+							aria-label="Filter by tag {facet.tag}, {facet.count} {facet.count === 1
+								? 'application'
+								: 'applications'}"
+							class="cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+							class:border-accent={active}
+							class:bg-accent={active}
+							class:text-accent-fg={active}
+							class:border-border={!active}
+							class:hover:opacity-80={!active}
+							style:background-color={active ? '' : colors.bg}
+							style:color={active ? '' : colors.fg}
+						>
+							{facet.tag} <span class="opacity-70">· {facet.count}</span>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<!-- Sort row (secondary; users mostly sort by clicking column headers) -->
 		<div class="mt-4 flex items-center gap-2">
