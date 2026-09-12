@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { resolve as resolvePath } from '$app/paths';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page as pageStore } from '$app/state';
@@ -28,8 +28,8 @@
 	let { data }: { data: PageData } = $props();
 
 	// Local copies of filters/sort that drive the URL on every change.
-	// We round-trip through `goto` so the URL is always the source of
-	// truth (refresh-safe, shareable, back-button-friendly).
+	// The URL stays the source of truth (refresh-safe, shareable) but
+	// updates go through shallow routing — see the sync effects below.
 	let filters: ApplicationFilters = $state({
 		q: '',
 		stages: [],
@@ -39,29 +39,27 @@
 	});
 	let sort: ApplicationSort = $state({ key: 'stageChangedAt', dir: 'desc' });
 
-	// Apply URL changes → local state. This is one-directional: URL wins
-	// on load; user interactions then write to URL via the `$effect` below.
+	// Apply URL changes → local state. URL wins on hard load/SSR so a
+	// shared URL renders the same view for everyone; the one-directional
+	// sync below then keeps local state as the user interacts.
 	$effect(() => {
 		filters = data.filters;
 		sort = data.sort;
 	});
 
-	// Local changes → URL. We do this with `goto(..., { replaceState: true })`
-	// so the back button doesn't accumulate every keystroke (the search
-	// input is already debounced 150ms before this fires).
-	//
-	// Pattern: extract the URL target into a derived, then in a separate
-	// `$effect` fire the navigation. The target is built with
-	// `resolvePath()` from `$app/paths` so it's typed as `ResolvedPathname`
-	// and the `no-navigation-without-resolve` rule recognizes it as a
-	// canonical internal URL.
+	// Local changes → URL via shallow routing (replaceState): updates the
+	// address bar WITHOUT navigation, so filter keystrokes don't invoke
+	// the worker at all (free-tier CPU + request budget). The server load
+	// only re-runs for state it owns: trash view (different row set) and
+	// the ?app= detail bundle. Data slicing (applyFilters/applySort) is
+	// pure client-side over data.applications, so nothing goes stale.
 	const urlTarget = $derived.by(() => {
 		const sp = serializeFiltersToUrl(filters, sort);
 		const search = sp.toString() ? sp.toString() : '';
 		const trash = data.trashView ? 'trash=1' : '';
 		// Preserve the modal-open flags (?app, ?new, ?resume) when
-		// filter/sort/trash changes, so the sync effect below never
-		// strips a modal the user just opened.
+		// filter/sort/trash changes, so a modal the user just opened
+		// never gets stripped by this sync.
 		const flags: string[] = [];
 		for (const key of ['app', 'new', 'resume']) {
 			const value = pageStore.url.searchParams.get(key);
@@ -76,13 +74,7 @@
 		const target = urlTarget;
 		const current = pageStore.url.pathname + pageStore.url.search;
 		if (target !== current) {
-			void goto(target, {
-				replaceState: true,
-				keepFocus: true,
-				noScroll: true
-			}).catch(() => {
-				// Navigation cancelled.
-			});
+			replaceState(target, pageStore.state);
 		}
 	});
 
@@ -167,8 +159,9 @@
 
 	// The new-app modal is `bind:open` on the derived above, so when it
 	// closes itself (Esc, backdrop, header X) `open` flips without the
-	// URL changing. Strip `?new=` so the URL stays the source of truth
-	// and the modal doesn't reopen on the next render.
+	// URL changing. Strip `?new=` via shallow routing so the URL stays
+	// the source of truth and the modal doesn't reopen on next render —
+	// no worker invocation for a modal close.
 	$effect(() => {
 		if (isNewAppOpen) return;
 		if (typeof window === 'undefined') return;
@@ -176,31 +169,18 @@
 		if (!sp.has('new')) return;
 		sp.delete('new');
 		const qs = sp.toString();
-		const next = (qs ? `/dashboard?${qs}` : '/dashboard') as `/${string}`;
-		void goto(resolvePath(next), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true
-		});
+		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), pageStore.state);
 	});
 
 	function openNewApp() {
 		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
 		sp.set('new', '1');
-		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true
-		});
+		replaceState(resolvePath(`/dashboard?${sp.toString()}`), pageStore.state);
 	}
 	function openResume() {
 		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
 		sp.set('resume', '1');
-		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true
-		});
+		replaceState(resolvePath(`/dashboard?${sp.toString()}`), pageStore.state);
 	}
 </script>
 

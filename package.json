@@ -39,7 +39,7 @@
 		"lint": "prettier --check . && eslint .",
 		"prepare": "svelte-kit sync || true",
 		"preview": "bun run build && bunx wrangler dev",
-		"seed": "bun scripts/seed.ts",
+		"seed": "bun db/scripts/seed.ts",
 		"types": "bunx wrangler types"
 	},
 	"type": "module",

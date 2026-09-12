@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { replaceState } from '$app/navigation';
 	import { resolve as resolvePath } from '$app/paths';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Modal from './Modal.svelte';
@@ -29,12 +29,9 @@
 		if (!sp.has('resume')) return;
 		sp.delete('resume');
 		const qs = sp.toString();
-		const next = (qs ? `/dashboard?${qs}` : '/dashboard') as `/${string}`;
-		void goto(resolvePath(next), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true
-		});
+		// Shallow routing: close without a worker invocation — the modal
+		// renders entirely from already-loaded client data.
+		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), page.state);
 	});
 
 	// Mock "library": list each app's resumeId + name. R2 upload lands

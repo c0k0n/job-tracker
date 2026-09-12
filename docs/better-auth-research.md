@@ -92,7 +92,7 @@ export const auth = betterAuth({
     database: { generateId: 'uuid', defaultFindManyLimit: 50, joins: true },
   },
 
-  rateLimit: { enabled: true, window: 60, max: 100 },
+  rateLimit: { enabled: true, window: 60, max: 100, storage: 'database', modelName: 'rateLimit' },
 
   // Plugins — add as needed
   plugins: [sveltekitCookies(getRequestEvent)],
@@ -221,7 +221,7 @@ export {};
 
 `auth.$Infer.Session` gives the full `{ user, session }` type. Same `Session` type is available client-side via `authClient.$Infer.Session`.
 
-### Client: `src/lib/auth-client.ts`
+### Client: `src/lib/auth-client.ts` (documented pattern — deliberately NOT used in this repo)
 
 ```ts
 import { createAuthClient } from 'better-auth/svelte';          // <- /svelte, not /react
@@ -440,7 +440,7 @@ export const auth = betterAuth({
     return e.BETTER_AUTH_SECRET ?? 'dev-secret-change-me-32-chars';
   })(),
   baseURL: (() => (env as { BETTER_AUTH_URL?: string }).BETTER_AUTH_URL)(),
-  trustedOrigins: ['http://localhost:5173'],
+  trustedOrigins: [],  // baseURL always trusted; extras via DEV_ORIGINS env (never hardcode localhost — BA docs warning)
   database: drizzleAdapter(db, { provider: 'sqlite', schema }),
   emailAndPassword: { enabled: true, autoSignIn: true, requireEmailVerification: false },
   session: { cookieCache: { enabled: true, maxAge: 300, strategy: 'compact' } },
@@ -448,7 +448,6 @@ export const auth = betterAuth({
   rateLimit: { enabled: true, storage: 'database', modelName: 'rateLimit' },
   plugins: [sveltekitCookies(getRequestEvent)],
 });
-```
 
 > Note: `secret` and `baseURL` resolvers are invoked at `betterAuth({})` call time (build), not per request. For a Workers deploy where the env is dynamic per isolate, you typically:
 > - Set `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL` as Wrangler **vars** (not secrets — they need to be available at module init).

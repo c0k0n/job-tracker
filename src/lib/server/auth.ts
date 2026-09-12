@@ -48,7 +48,15 @@ function buildAuth(env: Env) {
 		appName: 'Job Tracker',
 		secret: env.BETTER_AUTH_SECRET,
 		baseURL: env.BETTER_AUTH_URL,
-		trustedOrigins: [env.BETTER_AUTH_URL, 'http://localhost:5173'],
+		// baseURL is always trusted; extra dev origins come from an optional
+		// DEV_ORIGINS var (comma-separated). Never hardcode localhost here —
+		// Better Auth docs: "Do not leave the localhost origin in a trusted
+		// origins list of a production auth instance."
+		trustedOrigins: env.DEV_ORIGINS
+			? env.DEV_ORIGINS.split(',')
+					.map((o) => o.trim())
+					.filter(Boolean)
+			: [],
 		database: drizzleAdapter(getDb(env.DB), {
 			provider: 'sqlite',
 			// `import * as schema` carries tables AND their relations exports;
@@ -89,7 +97,7 @@ function buildAuth(env: Env) {
 			cookiePrefix: 'job-tracker',
 			database: { generateId: 'uuid', joins: true }
 		},
-		rateLimit: { enabled: true, window: 60, max: 100 },
+		rateLimit: { enabled: true, window: 60, max: 100, storage: 'database', modelName: 'rateLimit' },
 		databaseHooks: {
 			user: {
 				create: {

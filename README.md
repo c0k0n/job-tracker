@@ -36,8 +36,8 @@ The URL is the source of truth for all dashboard state: filters, sort, and open 
 | `src/lib/server/`     | Better Auth wiring + data layer. `applications-data.ts` — every function takes `(db, userId, …)`; every query filters on `userId`. `db/schema.ts` — Drizzle schema + row mappers (ISO ↔ unix-seconds conversion, the only conversion point) |
 | `src/lib/constants/`  | Stages, statuses, currencies, mock resume URLs (R2 upload deferred)                                                                                                                                                                         |
 | `src/lib/utils/`      | Pure helpers: KPIs, money, dates, sort/filter                                                                                                                                                                                               |
-| `migrations/`         | Drizzle-generated SQL files (the database recipe). Applied to D1 via `wrangler d1 migrations apply` — never hand-edit                                                                                                                       |
-| `scripts/`            | Dev-only: `bun run seed` fills **local** D1 with a test admin + sample data. Never touches the remote DB                                                                                                                                    |
+| `db/migrations/`      | Drizzle-generated SQL files (the database recipe). Applied to D1 via `wrangler d1 migrations apply` — never hand-edit                                                                                                                       |
+| `db/scripts/`         | Dev-only: `bun run seed` fills **local** D1 with a test admin + sample data. Never touches the remote DB                                                                                                                                    |
 | `docs/`               | Research files — the source of truth for stack behavior (see AGENTS.md)                                                                                                                                                                     |
 | `static/`             | Static assets (favicon, robots.txt, `.assetsignore`)                                                                                                                                                                                        |
 
@@ -47,7 +47,7 @@ The URL is the source of truth for all dashboard state: filters, sort, and open 
 - **Approval gate is server-owned.** The `disabled` field is `input: false`; only a server-side database hook writes it. Clients can't self-approve.
 - **Money = integer minor units.** Salaries stored as JSON `{min, max, currency}` in integer minor units — never floats.
 - **Free tier only.** Every binding and dependency must fit the Workers free plan. No R2/KV/DO/Queues bindings exist yet; the resume-upload feature is deferred until needed.
-- **Flat migrations.** drizzle-kit 0.31 emits `migrations/NNNN_name.sql`; `wrangler.jsonc` uses `migrations_pattern: 'migrations/*.sql'`.
+- **Flat migrations under `db/`.** drizzle-kit 0.31 emits `db/migrations/NNNN_name.sql`; `wrangler.jsonc` uses `migrations_pattern: 'db/migrations/*.sql'`. `db/scripts/` holds the local-only seed.
 
 ## Getting started
 

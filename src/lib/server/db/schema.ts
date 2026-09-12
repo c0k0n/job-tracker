@@ -114,6 +114,19 @@ export const verification = sqliteTable('verification', {
 	updatedAt: integer('updated_at', { mode: 'timestamp' })
 });
 
+/**
+ * Better Auth rate-limit counters (`rateLimit.storage: 'database'` —
+ * required on Workers, where per-isolate memory resets between requests
+ * and a memory-backed limiter is decorative). Shape per Better Auth's
+ * schema validator: `id` on every model + key unique, count, lastRequest ms.
+ */
+export const rateLimit = sqliteTable('rate_limit', {
+	id: text('id').primaryKey(),
+	key: text('key').notNull().unique(),
+	count: integer('count').notNull().default(0),
+	lastRequest: integer('last_request', { mode: 'number' }).notNull()
+});
+
 // ---------------------------------------------------------------------------
 // App tables
 // ---------------------------------------------------------------------------

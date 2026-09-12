@@ -17,14 +17,17 @@
 			// Drizzle owns migrations (drizzle-kit generate emits flat
 			// migrations/NNNN_name.sql files in 0.4x; the nested per-folder
 			// layout is Drizzle 1.0 RC's new output).
-			"migrations_dir": "migrations",
-			"migrations_pattern": "migrations/*.sql"
+			"migrations_dir": "db/migrations",
+			"migrations_pattern": "db/migrations/*.sql"
 		}
 	],
 	// Non-secret config. BETTER_AUTH_SECRET is a `wrangler secret put` value,
 	// never committed.
 	"vars": {
-		"BETTER_AUTH_URL": "http://localhost:5173"
+		"BETTER_AUTH_URL": "http://localhost:5173",
+		// Extra trusted auth origins for alternate local ports. Empty in prod
+		// (prod trusts only BETTER_AUTH_URL). See auth.ts trustedOrigins.
+		"DEV_ORIGINS": "http://localhost:5173"
 	},
 	"workers_dev": true,
 	"preview_urls": true,

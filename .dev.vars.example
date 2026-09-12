@@ -10,3 +10,8 @@ BETTER_AUTH_SECRET=change-me-generate-with-openssl-rand-hex-32
 # serve on: 5173 for `bun run dev`, 8787 for `wrangler dev --port 8787`
 # (override in .dev.vars when switching — a mismatch makes /api/auth/* 404).
 BETTER_AUTH_URL=http://localhost:5173
+
+# Extra trusted origins for local tooling (comma-separated). baseURL
+# (BETTER_AUTH_URL) is always trusted; this is for alternate dev ports.
+# Never set in production.
+DEV_ORIGINS=http://localhost:5173

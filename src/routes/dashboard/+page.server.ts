@@ -8,9 +8,7 @@ import {
 	createApplication,
 	getApplicationDetail,
 	getApplicationsForUser,
-	getStageMoveEvents,
-	getUpcomingInterviews,
-	listTrashedForUser,
+	getDashboardData,
 	permanentlyDeleteApplication,
 	restoreApplication,
 	softDeleteApplication,
@@ -40,14 +38,21 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 	// returns only active rows. KPI + chart rollups always come from the
 	// active set — they don't make sense for trashed rows.
 	const trashView = url.searchParams.get('trash') === '1';
-	const activeApps = await getApplicationsForUser(db, locals.user.id);
-	const applications = trashView ? await listTrashedForUser(db, locals.user.id) : activeApps;
-	const upcomingInterviews = await getUpcomingInterviews(db, locals.user.id, 30);
-	const kpis = computeKpis(activeApps, upcomingInterviews);
+
+	// One D1 round-trip for every dashboard rollup (active list, trash
+	// count, upcoming interviews, stage moves) — the queries are
+	// independent, so Promise.all + D1's session reuse issues them
+	// together instead of sequentially (free-tier CPU + latency win).
+	const { active, trashedCount, upcomingInterviews, stageMoves } = await getDashboardData(
+		db,
+		locals.user.id,
+		30
+	);
+	const applications = trashView
+		? await getApplicationsForUser(db, locals.user.id, { onlyTrashed: true })
+		: active;
+	const kpis = computeKpis(active, upcomingInterviews);
 	const { filters, sort } = parseFiltersFromUrl(url.searchParams);
-	const trashedCount = trashView
-		? applications.length
-		: (await listTrashedForUser(db, locals.user.id)).length;
 
 	return {
 		user: locals.user,
@@ -56,10 +61,10 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 		isAdmin: isAdminUser(locals.user),
 		filters,
 		sort,
-		tagFacets: tagFacetsFor(activeApps),
+		tagFacets: tagFacetsFor(active),
 		trashView,
 		// Server-computed stage-move timestamps for the velocity chart.
-		stageMoves: await getStageMoveEvents(db, locals.user.id),
+		stageMoves,
 		trashedCount,
 		// When the URL has `?app=<id>`, fetch the detail bundle server-side
 		// so the modal renders without a client-side server-only import.

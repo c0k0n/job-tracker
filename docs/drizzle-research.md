@@ -5,9 +5,9 @@
 > `drizzle-kit` 0.31.10 are the CURRENT published versions — "Drizzle 1.0
 > RC" with `defineRelations` / `defineRelationsPart` is NOT published as of
 > this date. Use the relations v1 API (`relations()` from 'drizzle-orm').
-> drizzle-kit 0.31 emits FLAT migration files (`migrations/0000_name.sql`),
+> drizzle-kit 0.31 emits FLAT migration files (`db/migrations/0000_name.sql`),
 > NOT the nested per-folder layout described below — wrangler.jsonc uses
-> `migrations_pattern: 'migrations/*.sql'`. The @better-auth/drizzle-adapter
+> `migrations_pattern: 'db/migrations/*.sql'`. The @better-auth/drizzle-adapter
 > v2 entry (`relations-v2`) exists but pairs with the v1 relations schema we
 > ship today. This note overrides the "1.0 RC" sections below until 1.0
 > actually ships.
@@ -233,7 +233,7 @@ export default defineConfig({
   dialect: 'sqlite',
   driver: 'd1-http',
   schema: './src/lib/server/db/schema.ts',
-  out: './migrations',
+  out: './db/migrations',
   casing: 'snake_case',
   dbCredentials: {
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
@@ -261,12 +261,12 @@ For ORM-style migrations (Drizzle tracks which SQL files ran), use the local SQL
   "binding": "DB",
   "database_name": "job-tracker",
   "database_id": "<UUID>",
-  "migrations_dir": "migrations",
-  "migrations_pattern": "migrations/*/migration.sql"
+  "migrations_dir": "db/migrations",
+  "migrations_pattern": "db/migrations/*.sql"
 }]
 ```
 
-The Drizzle-style layout is one folder per migration (`migrations/0001_init/migration.sql`); the glob captures it. This is the new (mid-2026+) `migrations_pattern` flag.
+The repo uses drizzle-kit 0.31's FLAT layout (`db/migrations/0000_name.sql`) with `migrations_pattern: 'db/migrations/*.sql'` — see the correction note at the top of this file. (The nested one-folder-per-migration layout was the unpublished Drizzle 1.0 RC plan.)
 
 ## Typed Drizzle (v1 relations v2 + Better Auth + Cloudflare D1)
 

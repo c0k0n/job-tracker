@@ -27,9 +27,7 @@ import type { Application, ApplicationDetail, Contact, Interview } from '$lib/ty
 
 /** Options for `getApplicationsForUser`. */
 export interface ListApplicationsOptions {
-	/** Include soft-deleted rows alongside active ones (default false). */
-	includeTrashed?: boolean;
-	/** Return only trashed rows (default false). */
+	/** Return only trashed rows (default false: only active). */
 	onlyTrashed?: boolean;
 }
 
@@ -39,8 +37,8 @@ function scopeFor(userId: string) {
 
 /**
  * All applications for a user, ordered by most-recent stage change.
- * Excludes soft-deleted rows by default; `onlyTrashed` flips to the trash
- * view, `includeTrashed` returns everything.
+ * Excludes soft-deleted rows by default; `onlyTrashed` flips to the
+ * trash view.
  */
 export async function getApplicationsForUser(
 	db: Db,
@@ -49,18 +47,11 @@ export async function getApplicationsForUser(
 ): Promise<Application[]> {
 	const where = options.onlyTrashed
 		? and(scopeFor(userId), isNotNull(application.deletedAt))
-		: options.includeTrashed
-			? scopeFor(userId)
-			: and(scopeFor(userId), isNull(application.deletedAt));
+		: and(scopeFor(userId), isNull(application.deletedAt));
 	const rows = await db.select().from(application).where(where).all();
 	return rows
 		.map(rowToApplication)
 		.sort((a, b) => new Date(b.stageChangedAt).getTime() - new Date(a.stageChangedAt).getTime());
-}
-
-/** Only the soft-deleted rows for a user (trash view). */
-export async function listTrashedForUser(db: Db, userId: string): Promise<Application[]> {
-	return getApplicationsForUser(db, userId, { onlyTrashed: true });
 }
 
 /** Visible-to-user check shared by every single-application read. */
@@ -367,55 +358,73 @@ export async function addContact(
 	return rowToContact(row!);
 }
 
-// ---- Dashboard helpers (server-side aggregates) ----
-
-/**
- * All upcoming interviews for a user across their active applications
- * within `windowDays`, newest first. Feeds the "Interviews" KPI, which the
- * stub round incorrectly derived from nextActionAt.
- */
-export async function getUpcomingInterviews(
-	db: Db,
-	userId: string,
-	windowDays: number
-): Promise<Interview[]> {
-	const now = Date.now();
-	const since = new Date(now - 24 * 60 * 60 * 1000); // include today's already-started
-	const until = new Date(now + windowDays * 24 * 60 * 60 * 1000);
-	const rows = await db
-		.select({ iv: interview })
-		.from(interview)
-		.innerJoin(application, eq(interview.applicationId, application.id))
-		.where(
-			and(
-				eq(application.userId, userId),
-				isNull(application.deletedAt),
-				eq(interview.outcome, 'pending'),
-				gte(interview.scheduledAt, since),
-				lte(interview.scheduledAt, until)
-			)
-		)
-		.all();
-	return rows.map((r) => rowToInterview(r.iv));
-}
-
 /** Stage-change counts per day for the velocity chart (server-computed). */
 export interface StageMoveEvent {
 	occurredAt: string;
 }
 
-export async function getStageMoveEvents(db: Db, userId: string): Promise<StageMoveEvent[]> {
-	const rows = await db
-		.select({ occurredAt: activityEvent.occurredAt })
-		.from(activityEvent)
-		.innerJoin(application, eq(activityEvent.applicationId, application.id))
-		.where(
-			and(
-				eq(application.userId, userId),
-				isNull(application.deletedAt),
-				eq(activityEvent.kind, 'stage_changed')
+// ---- Batched dashboard aggregate ----
+
+/**
+ * One D1 round-trip for the dashboard rollups (list, trash count,
+ * upcoming interviews, stage moves). D1's batched statements share a
+ * single HTTP session — 4 sequential queries become 1 round-trip
+ * (drizzle-research.md "D1's prepared-statement batching").
+ */
+export async function getDashboardData(
+	db: Db,
+	userId: string,
+	windowDays: number
+): Promise<{
+	active: Application[];
+	trashedCount: number;
+	upcomingInterviews: Interview[];
+	stageMoves: StageMoveEvent[];
+}> {
+	const now = Date.now();
+	const since = new Date(now - 24 * 60 * 60 * 1000);
+	const until = new Date(now + windowDays * 24 * 60 * 60 * 1000);
+
+	const scope = eq(application.userId, userId);
+	const [activeRows, trashCountRows, interviewRows, moveRows] = await Promise.all([
+		db
+			.select()
+			.from(application)
+			.where(and(scope, isNull(application.deletedAt)))
+			.all(),
+		db
+			.select({ id: application.id })
+			.from(application)
+			.where(and(scope, isNotNull(application.deletedAt)))
+			.all(),
+		db
+			.select({ iv: interview })
+			.from(interview)
+			.innerJoin(application, eq(interview.applicationId, application.id))
+			.where(
+				and(
+					scope,
+					isNull(application.deletedAt),
+					eq(interview.outcome, 'pending'),
+					gte(interview.scheduledAt, since),
+					lte(interview.scheduledAt, until)
+				)
 			)
-		)
-		.all();
-	return rows.map((r) => ({ occurredAt: r.occurredAt.toISOString() }));
+			.all(),
+		db
+			.select({ occurredAt: activityEvent.occurredAt })
+			.from(activityEvent)
+			.innerJoin(application, eq(activityEvent.applicationId, application.id))
+			.where(and(scope, isNull(application.deletedAt), eq(activityEvent.kind, 'stage_changed')))
+			.all()
+	]);
+
+	return {
+		active: activeRows
+			.map(rowToApplication)
+			.sort((a, b) => new Date(b.stageChangedAt).getTime() - new Date(a.stageChangedAt).getTime()),
+		trashedCount: trashCountRows.length,
+		upcomingInterviews: interviewRows.map((r) => rowToInterview(r.iv)),
+		stageMoves: moveRows.map((r) => ({ occurredAt: r.occurredAt.toISOString() }))
+	};
 }

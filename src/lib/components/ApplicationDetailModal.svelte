@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve as resolvePath } from '$app/paths';
-	import { goto } from '$app/navigation';
+	import { replaceState } from '$app/navigation';
 	import { enhance } from '$app/forms';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { ApplicationDetail } from '$lib/types';
@@ -63,9 +63,9 @@
 	let open = $derived(!!page.url.searchParams.get('app'));
 
 	// When the modal closes itself (Esc, backdrop, X), strip the
-	// `?app=` query from the URL so the back button doesn't see a
-	// stale app id. We compare against the current URL so the
-	// already-clean state short-circuits.
+	// `?app=` query via shallow routing so the back button doesn't see
+	// a stale app id — without invoking the worker (the detail data is
+	// already on the client from the open navigation).
 	$effect(() => {
 		if (open) return;
 		if (typeof window === 'undefined') return;
@@ -73,12 +73,7 @@
 		if (!sp.has('app')) return;
 		sp.delete('app');
 		const qs = sp.toString();
-		const next = (qs ? `/dashboard?${qs}` : '/dashboard') as `/${string}`;
-		void goto(resolvePath(next), {
-			replaceState: true,
-			keepFocus: true,
-			noScroll: true
-		});
+		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), page.state);
 	});
 	const app = $derived(detail?.application ?? null);
 	// The inner ApplicationForm prop is `application`; alias for shorthand.

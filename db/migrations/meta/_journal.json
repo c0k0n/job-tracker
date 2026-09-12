@@ -1,0 +1,27 @@
+{
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "6",
+			"when": 1789151202657,
+			"tag": "0000_useful_butterfly",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1789188029877,
+			"tag": "0001_puzzling_wilson_fisk",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1789188207560,
+			"tag": "0002_sleepy_robin_chapel",
+			"breakpoints": true
+		}
+	]
+}
