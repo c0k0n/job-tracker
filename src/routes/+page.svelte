@@ -1,10 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { page } from '$app/state';
 	import type { ActionData } from './$types';
 
 	type Mode = 'signin' | 'signup';
 
 	let { form }: { form: ActionData } = $props();
+
+	/** `?signedout=1` → calm confirmation banner (set by the pending-approval
+	 * sign-out and the dashboard sign-out). */
+	const justSignedOut = $derived(page.url.searchParams.get('signedout') === '1');
 
 	// Active mode for the tabs. Drives what the form submits and which
 	// heading the user sees. Reacts to `form.mode` after a server failure so
@@ -70,8 +75,17 @@
 -->
 <main
 	id="main"
-	class="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-center px-6 py-12 sm:py-20"
+	class="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-6 py-12 sm:py-20"
 >
+	{#if justSignedOut}
+		<div
+			role="status"
+			class="bg-success-bg mb-6 rounded-md border border-success px-3 py-2.5 text-sm text-success"
+		>
+			Signed out successfully.
+		</div>
+	{/if}
+
 	<header class="mb-8">
 		<p class="font-mono text-xs tracking-widest text-muted uppercase">Job Tracker</p>
 		<h1

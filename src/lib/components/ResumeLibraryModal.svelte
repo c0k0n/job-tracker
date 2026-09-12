@@ -1,38 +1,19 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { replaceState } from '$app/navigation';
-	import { resolve as resolvePath } from '$app/paths';
-	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
 	import { RESUME_URLS } from '$lib/constants/resumes';
 	import { formatDateShort, formatRelative } from '$lib/utils/dates';
 	import type { Application } from '$lib/types';
+
 	interface Props {
 		/** All apps with a `resumeId`. Source: dashboard load returns `applications`. */
 		applications: readonly Application[];
+		/** Bindable open state — parent (dashboard) owns it; this modal
+		 * flips it false on Esc/backdrop/X via Modal's bind:open chain. */
+		open?: boolean;
 	}
 
-	let { applications }: Props = $props();
-
-	// Two-way bound open state mirrored from the `?resume=1` query param
-	// (same pattern as the details modal): a writable `$derived` satisfies
-	// `Modal`'s `bind:open`, and the URL stays the single source of truth.
-	// Closing flips `open` (Esc, backdrop, X) and the effect below strips
-	// the query so the modal doesn't reopen on the next render.
-	let open = $derived(page.url.searchParams.get('resume') === '1');
-
-	$effect(() => {
-		if (open) return;
-		if (typeof window === 'undefined') return;
-		const sp = new SvelteURLSearchParams(window.location.search);
-		if (!sp.has('resume')) return;
-		sp.delete('resume');
-		const qs = sp.toString();
-		// Shallow routing: close without a worker invocation — the modal
-		// renders entirely from already-loaded client data.
-		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), page.state);
-	});
+	let { applications, open = $bindable(false) }: Props = $props();
 
 	// Mock "library": list each app's resumeId + name. R2 upload lands
 	// in the backend round. For now we just show the inventory + a

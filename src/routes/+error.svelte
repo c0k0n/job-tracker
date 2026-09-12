@@ -24,7 +24,7 @@
 
 <main
 	id="main"
-	class="mx-auto flex min-h-[100dvh] w-full max-w-2xl flex-col justify-center px-6 py-16 sm:py-24"
+	class="mx-auto flex min-h-dvh w-full max-w-2xl flex-col justify-center px-6 py-16 sm:py-24"
 	aria-labelledby={headingId}
 >
 	<p class="font-mono text-sm tracking-widest text-muted uppercase">

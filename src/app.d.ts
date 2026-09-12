@@ -23,6 +23,15 @@ declare global {
 			user: AuthInstance.$Infer.Session.user | null;
 			session: AuthInstance.$Infer.Session.session | null;
 		}
+
+		// Typed client-side state for shallow routing (pushState/replaceState).
+		// Modal open/close lives here — NOT in page.url — because SvelteKit's
+		// replaceState updates page.state but never page.url.
+		interface PageState {
+			detailId?: string;
+			newApp?: boolean;
+			resumeLibrary?: boolean;
+		}
 	}
 }
 

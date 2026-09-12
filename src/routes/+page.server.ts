@@ -36,7 +36,7 @@ function safeNextParam(raw: string): string {
  * ActionData union collapses to a single FailPayload instead of
  * per-call literal types. */
 function authFail(
-	status: 400 | 401 | 500,
+	status: 400 | 401 | 429 | 500,
 	mode: string,
 	emailOrUsername: string,
 	fieldErrors: FieldErrors
@@ -151,10 +151,33 @@ export const actions: Actions = {
 				authUser = result?.user ?? null;
 			}
 		} catch (err) {
-			// APIError from better-auth/api surfaces field-agnostic messages.
-			const message =
-				err instanceof Error && err.message ? err.message : 'Authentication failed. Try again.';
-			return authFail(401, mode, emailOrUsername, { _form: message });
+			// Map Better Auth APIError statuses to human copy. Raw messages
+			// ("Invalid username or password") stay, but infrastructure
+			// failures (429 rate limit, 500s) get actionable guidance instead
+			// of library jargon. `status`/`statusCode` confirmed on APIError
+			// from the installed @better-auth/core types.
+			const status =
+				typeof err === 'object' && err !== null && 'status' in err ? Number(err.status) : undefined;
+			let message: string;
+			if (status === 429) {
+				message = 'Too many attempts. Please wait a moment before trying again.';
+			} else if (status !== undefined && status >= 500) {
+				message = 'Something went wrong on our side. Please try again in a moment.';
+			} else if (
+				err instanceof Error &&
+				err.message &&
+				mode === 'signin' &&
+				/invalid email or password|invalid username or password/i.test(err.message)
+			) {
+				message = 'Email or password is incorrect. Check for typos and try again.';
+			} else if (err instanceof Error && err.message) {
+				message = err.message;
+			} else {
+				message = 'Authentication failed. Try again.';
+			}
+			return authFail(status === 429 ? 429 : 401, mode, emailOrUsername, {
+				_form: message
+			});
 		}
 
 		// Approval gate: first user bootstraps as approved admin; later

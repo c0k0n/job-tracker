@@ -4,6 +4,7 @@
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page as pageStore } from '$app/state';
 	import { enhance } from '$app/forms';
+	import { untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import type { Application, ApplicationFilters, ApplicationSort, KpiCounts } from '$lib/types';
 	import {
@@ -47,37 +48,6 @@
 		sort = data.sort;
 	});
 
-	// Local changes → URL via shallow routing (replaceState): updates the
-	// address bar WITHOUT navigation, so filter keystrokes don't invoke
-	// the worker at all (free-tier CPU + request budget). The server load
-	// only re-runs for state it owns: trash view (different row set) and
-	// the ?app= detail bundle. Data slicing (applyFilters/applySort) is
-	// pure client-side over data.applications, so nothing goes stale.
-	const urlTarget = $derived.by(() => {
-		const sp = serializeFiltersToUrl(filters, sort);
-		const search = sp.toString() ? sp.toString() : '';
-		const trash = data.trashView ? 'trash=1' : '';
-		// Preserve the modal-open flags (?app, ?new, ?resume) when
-		// filter/sort/trash changes, so a modal the user just opened
-		// never gets stripped by this sync.
-		const flags: string[] = [];
-		for (const key of ['app', 'new', 'resume']) {
-			const value = pageStore.url.searchParams.get(key);
-			if (value) flags.push(`${key}=${encodeURIComponent(value)}`);
-		}
-		const parts = [trash, search, ...flags].filter(Boolean);
-		const query = parts.length ? `?${parts.join('&')}` : '';
-		return resolvePath(`/dashboard${query}`);
-	});
-
-	$effect(() => {
-		const target = urlTarget;
-		const current = pageStore.url.pathname + pageStore.url.search;
-		if (target !== current) {
-			replaceState(target, pageStore.state);
-		}
-	});
-
 	// Derived data: filter → sort → render. Pure, no side effects.
 	const visibleRows: Application[] = $derived(
 		applySort(applyFilters(data.applications, filters), sort)
@@ -117,11 +87,52 @@
 		return `Stalled or ghosted: consider following up`;
 	});
 
-	// Row click → server reload to fetch the detail bundle, then
-	// the modal renders from `data.activeDetail`. Using `?app=`
-	// (not shallow routing) because the detail bundle is large
-	// and we want it server-rendered for the initial paint.
+	// Server-side validation results from the create/edit actions surface
+	// here via `page.form` (progressive enhancement keeps the modal open so
+	// the user can fix the highlighted fields). Only forward a result that
+	// matches the create form.
+	const formResult = $derived(pageStore.form);
+	const newAppForm = $derived(
+		formResult && formResult.operation === 'create'
+			? formResult
+			: { values: undefined, errors: undefined, operation: undefined }
+	);
+
+	// ---- Modal state: local truth, one URL/page.state sync effect ----
+	// SvelteKit's replaceState/pushState update `page.state` but NEVER
+	// `page.url` (verified against the installed @sveltejs/kit source).
+	// So modal open/close can't be derived from page.url.searchParams —
+	// that was the "button does nothing" bug. Instead: local $state is
+	// the UI truth; ONE effect shallow-routes the full query string +
+	// typed page.state from it (no worker invocation); real navigations
+	// (goto/back/forward) hydrate the local state from page.url.
+
+	// Detail modal: opens via goto(?app=) so the server load fetches the
+	// bundle; SSR initial value comes from the load's activeDetail
+	// (initial-only by design — live updates flow through the hydrate
+	// effect below).
+	let detailId = $state<string | null>(untrack(() => data.activeDetail?.application.id ?? null));
+	let detailOpen = $state(untrack(() => data.activeDetail !== null));
+
+	// New-application + resume-library modals: pure client state; hard
+	// loading a ?new=1 / ?resume=1 URL (refresh/share) opens them too.
+	// untrack keeps the read initial-only (hydration); live updates flow
+	// through the hydrate effect below.
+	let newAppOpen = $state(untrack(() => pageStore.url.searchParams.get('new') === '1'));
+	let resumeOpen = $state(untrack(() => pageStore.url.searchParams.get('resume') === '1'));
+
+	// Real navigations (goto, back/forward) → local state. page.url only
+	// changes on real navigations, so this hydrates; it never fights the
+	// local truth between navigations.
+	$effect(() => {
+		detailId = pageStore.url.searchParams.get('app');
+		detailOpen = !!pageStore.url.searchParams.get('app');
+	});
+
 	function onRowClick(app: Application) {
+		// goto (real navigation): the detail bundle must be fetched by the
+		// server load (?app=), and page.url updates — which the hydrate
+		// effect above turns into detailOpen = true.
 		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
 		sp.set('app', app.id);
 		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
@@ -131,57 +142,48 @@
 		});
 	}
 
-	// Trash view toggle: navigate to /dashboard?trash=1 / without.
+	// Modal open helpers — flip local state; the URL-sync effect below
+	// shallow-routes the query string (no worker invocation).
+	function openNewApp() {
+		newAppOpen = true;
+	}
+	function openResume() {
+		resumeOpen = true;
+	}
+
+	// Trash view toggle: a real navigation (different row set from the
+	// server load), so it stays an <a href>.
 	const trashHref = $derived(resolvePath(data.trashView ? '/dashboard' : '/dashboard?trash=1'));
 	const trashLabel = $derived(data.trashView ? 'Active' : 'Trash');
 
-	let isNewAppOpen = $derived(pageStore.url.searchParams.get('new') === '1');
-
 	// Any modal open → background must be inert so screen readers and the
-	// Tab key can't reach behind the dialog. `inert` is the modern primitive;
-	// `aria-hidden` alone doesn't block focus.
-	const anyModalOpen = $derived(
-		pageStore.url.searchParams.has('app') ||
-			pageStore.url.searchParams.has('new') ||
-			pageStore.url.searchParams.has('resume')
-	);
+	// Tab key can't reach behind the dialog.
+	const anyModalOpen = $derived(detailOpen || newAppOpen || resumeOpen);
 
-	// Server-side validation results from the create/edit actions surface
-	// here via `page.form` (progressive enhancement keeps the modal open so
-	// the user can fix the highlighted fields). We only forward a result
-	// that matches the mode of the form it belongs to.
-	const formResult = $derived(pageStore.form);
-	const newAppForm = $derived(
-		formResult && formResult.operation === 'create'
-			? formResult
-			: { values: undefined, errors: undefined, operation: undefined }
-	);
-
-	// The new-app modal is `bind:open` on the derived above, so when it
-	// closes itself (Esc, backdrop, header X) `open` flips without the
-	// URL changing. Strip `?new=` via shallow routing so the URL stays
-	// the source of truth and the modal doesn't reopen on next render —
-	// no worker invocation for a modal close.
+	// THE single URL writer: local truth → query string + typed page.state
+	// via shallow routing. The guard compares against window.location (the
+	// NATIVE url) — pageStore.url is frozen between real navigations
+	// (replaceState doesn't update it), so comparing against it would
+	// silently skip legit writes like stripping ?new= on close.
 	$effect(() => {
-		if (isNewAppOpen) return;
-		if (typeof window === 'undefined') return;
-		const sp = new SvelteURLSearchParams(window.location.search);
-		if (!sp.has('new')) return;
-		sp.delete('new');
+		const sp = serializeFiltersToUrl(filters, sort);
+		if (data.trashView) sp.set('trash', '1');
+		if (detailOpen && detailId) sp.set('app', detailId);
+		if (newAppOpen) sp.set('new', '1');
+		if (resumeOpen) sp.set('resume', '1');
 		const qs = sp.toString();
-		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), pageStore.state);
+		const target = resolvePath(qs ? `/dashboard?${qs}` : '/dashboard');
+		if (
+			typeof window !== 'undefined' &&
+			target !== window.location.pathname + window.location.search
+		) {
+			replaceState(target, {
+				detailId: detailOpen ? (detailId ?? undefined) : undefined,
+				newApp: newAppOpen || undefined,
+				resumeLibrary: resumeOpen || undefined
+			});
+		}
 	});
-
-	function openNewApp() {
-		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
-		sp.set('new', '1');
-		replaceState(resolvePath(`/dashboard?${sp.toString()}`), pageStore.state);
-	}
-	function openResume() {
-		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
-		sp.set('resume', '1');
-		replaceState(resolvePath(`/dashboard?${sp.toString()}`), pageStore.state);
-	}
 </script>
 
 <svelte:head>
@@ -406,21 +408,19 @@
 	</section>
 
 	<footer class="mt-12 border-t border-border pt-4 text-xs text-muted">
-		<p>
-			Private job tracker — data is stubbed until the backend round (D1 + Drizzle + Better Auth).
-		</p>
+		<p>Private job tracker. Your data stays in your account only.</p>
 	</footer>
 </div>
 <!--
-	Modals. Each is mounted unconditionally; their open state is derived
-	from the URL query (?app / ?new / ?resume). Closing a modal flips the
-	bound `open` and an effect strips that query param, so the URL remains
-	the single source of truth (refresh-safe, shareable).
+	Modals. All open state is local $state above (single URL-sync effect
+	keeps the query string + page.state shallow-routed without worker
+	invocations). Detail opens via goto so the server load fetches its
+	bundle; resume/new are pure client state.
 -->
-<ApplicationDetailModal detail={data.activeDetail} form={pageStore.form} />
-<ResumeLibraryModal applications={data.applications} />
+<ApplicationDetailModal detail={data.activeDetail} form={pageStore.form} bind:open={detailOpen} />
+<ResumeLibraryModal applications={data.applications} bind:open={resumeOpen} />
 <Modal
-	bind:open={isNewAppOpen}
+	bind:open={newAppOpen}
 	title="Add application"
 	subtitle="Track a new job application."
 	size="lg"

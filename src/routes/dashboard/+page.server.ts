@@ -117,7 +117,7 @@ export const actions: Actions = {
 	signout: async ({ request }) => {
 		const auth = getAuth();
 		await auth.api.signOut({ headers: request.headers });
-		throw redirect(303, '/');
+		throw redirect(303, '/?signedout=1');
 	},
 
 	/**

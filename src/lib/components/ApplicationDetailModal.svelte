@@ -1,9 +1,5 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { resolve as resolvePath } from '$app/paths';
-	import { replaceState } from '$app/navigation';
 	import { enhance } from '$app/forms';
-	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import type { ApplicationDetail } from '$lib/types';
 	import Modal from './Modal.svelte';
 	import StatusBadge from './StatusBadge.svelte';
@@ -18,6 +14,9 @@
 		/** Resolved detail bundle for the application currently in the modal.
 		 * Null if the row was deleted / not visible. */
 		detail: ApplicationDetail | null;
+		/** Bindable open state — the dashboard owns it (local $state there;
+		 * opened via goto so the server load fetches the bundle). */
+		open?: boolean;
 		/** Latest form-action result from the dashboard page (`page.form`).
 		 * Forwarded to the edit ApplicationForm so server-side validation
 		 * errors for the `edit` action surface above the fields. */
@@ -28,7 +27,7 @@
 		} | null;
 	}
 
-	let { detail, form }: Props = $props();
+	let { detail, open = $bindable(false), form }: Props = $props();
 
 	type Tab = 'overview' | 'interviews' | 'contacts' | 'activity';
 	let activeTab = $state<Tab>('overview');
@@ -55,26 +54,10 @@
 		});
 	}
 
-	// Two-way bound modal open state, mirrored from the `?app=` query
-	// param. A writable `$derived` (Svelte >= 5.25) keeps the bindable
-	// `bind:open` contract with the Modal primitive while staying a pure
-	// function of page.url — closing flips `open` and the effect below
-	// strips the query so the URL stays the source of truth.
-	let open = $derived(!!page.url.searchParams.get('app'));
-
-	// When the modal closes itself (Esc, backdrop, X), strip the
-	// `?app=` query via shallow routing so the back button doesn't see
-	// a stale app id — without invoking the worker (the detail data is
-	// already on the client from the open navigation).
-	$effect(() => {
-		if (open) return;
-		if (typeof window === 'undefined') return;
-		const sp = new SvelteURLSearchParams(window.location.search);
-		if (!sp.has('app')) return;
-		sp.delete('app');
-		const qs = sp.toString();
-		replaceState(qs ? resolvePath(`/dashboard?${qs}`) : resolvePath('/dashboard'), page.state);
-	});
+	// Open state is the bindable `open` prop (owned by the dashboard);
+	// closing via Esc/backdrop/X flips it there, and the dashboard's
+	// single URL-sync effect strips `?app=` via shallow routing. This
+	// component no longer touches navigation APIs itself.
 	const app = $derived(detail?.application ?? null);
 	// The inner ApplicationForm prop is `application`; alias for shorthand.
 	const application = $derived(app ?? undefined);
