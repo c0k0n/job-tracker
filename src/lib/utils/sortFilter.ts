@@ -14,7 +14,7 @@ import type {
 	SortKey,
 	WorkArrangement
 } from '$lib/types';
-import { ARRANGEMENT_BY_VALUE } from '$lib/constants/stages';
+import { ARRANGEMENT_BY_VALUE, STAGES, STATUSES } from '$lib/constants/stages';
 
 /**
  * Apply the current filter set to a list of applications.
@@ -104,27 +104,14 @@ export function applySort(apps: readonly Application[], sort: ApplicationSort): 
 	});
 }
 
-// Sort indices for funnel / status ordering (earlier in funnel = lower index = sorts first in asc).
-const STAGE_ORDER: Record<string, number> = {
-	saved: 0,
-	applied: 1,
-	phone_screen: 2,
-	technical: 3,
-	onsite: 4,
-	final: 5,
-	offer: 6,
-	accepted: 7,
-	rejected: 8,
-	withdrawn: 9
-};
-
-const STATUS_ORDER: Record<string, number> = {
-	active: 0,
-	stalled: 1,
-	ghosted: 2,
-	paused: 3,
-	closed: 4
-};
+// Sort indices for funnel / status ordering (earlier in funnel = lower
+// index = sorts first in asc). Derived from the single source of truth in
+// stages.ts (STAGES / STATUSES arrays) so a reorder there can't silently
+// diverge sort from funnel/validation.
+const STAGE_ORDER: Record<string, number> = Object.fromEntries(STAGES.map((s, i) => [s.value, i]));
+const STATUS_ORDER: Record<string, number> = Object.fromEntries(
+	STATUSES.map((s, i) => [s.value, i])
+);
 
 /**
  * Parse URL search params into typed filter + sort state.

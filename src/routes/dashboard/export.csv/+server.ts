@@ -1,29 +1,27 @@
 import type { RequestHandler } from './$types';
 import { getApplicationsForUser } from '$lib/server/applications-data';
+import { getDb } from '$lib/server/db';
 import { CURRENCY_BY_CODE } from '$lib/constants/currencies';
 
 /**
  * CSV export of the current user's applications.
  *
- * Returns text/csv with the columns Round C needs for an "import into
- * Sheets" round-trip. Stage / status / arrangement / salary use the
- * canonical display labels so the CSV is human-readable, not a
- * machine-coded dump.
+ * Returns text/csv with the columns needed for an "import into Sheets"
+ * round-trip. Stage / status / arrangement / salary use the canonical
+ * display labels so the CSV is human-readable, not a machine-coded dump.
  *
- * Auth: requires a logged-in user. Unauthenticated requests are
- * redirected to / (same as the dashboard guard).
+ * Auth: requires a logged-in user. Unauthenticated requests get a 401
+ * plain-text body (no HTML redirect) so a curl caller sees the error.
  */
-export const GET: RequestHandler = async ({ locals }) => {
+export const GET: RequestHandler = async ({ locals, platform }) => {
 	if (!locals.user) {
-		// Plain-text body + 401 — a CSV download gets an auth check
-		// instead of an HTML redirect so a curl caller sees the error.
 		return new Response('Authentication required.\n', {
 			status: 401,
 			headers: { 'Content-Type': 'text/plain; charset=utf-8' }
 		});
 	}
-
-	const apps = getApplicationsForUser(locals.user.id);
+	const db = getDb(platform!.env.DB);
+	const apps = await getApplicationsForUser(db, locals.user.id);
 
 	const COLUMNS = [
 		'company',
@@ -48,10 +46,10 @@ export const GET: RequestHandler = async ({ locals }) => {
 		'deletedAt'
 	] as const;
 
-	// Build CSV using string concat + csvEscape. We intentionally don't
-	// depend on a CSV library — round-trip via Sheets works fine with
-	// RFC-4180 quoting and it's tiny.
+	// Build CSV using string concat + csvEscape. No CSV library needed —
+	// RFC-4180 quoting is tiny and round-trips through Sheets.
 	const rows: string[] = [COLUMNS.join(',')];
+
 	for (const a of apps) {
 		const currency = a.salary?.currency;
 		const currencyMeta = currency ? CURRENCY_BY_CODE[currency] : null;
@@ -108,11 +106,23 @@ export const GET: RequestHandler = async ({ locals }) => {
 	});
 };
 
-/** RFC-4180 cell escape: wrap in double-quotes if the cell contains
- *  a quote, comma, or newline; double up internal quotes. */
+/**
+ * RFC-4180 cell escape + formula-injection neutralizer.
+ *
+ * Quoting alone doesn't stop Excel/Sheets from *evaluating* a cell whose
+ * first char is =, +, -, @, or tab (stored user text like company names or
+ * notes can carry `=SUM(...)` or `=HYPERLINK(...)` payloads). Prefixing a
+ * leading zero-format danger char with a single quote (or an apostrophe-
+ * free approach: prepend a tab-free zero char) defuses evaluation while
+ * keeping the visible text intact. We prefix with a single quote — the
+ * standard, lossless-in-CSV mitigation (OWASP CSV injection guidance).
+ */
 function csvEscape(value: string): string {
-	if (value === '') return '';
-	const needsQuote = /[",\r\n]/.test(value);
-	const escaped = value.replace(/"/g, '""');
+	let cell = value;
+	if (/^[=+\-@\t\r]/.test(cell)) {
+		cell = `'${cell}`;
+	}
+	const needsQuote = /[",\r\n]/.test(cell);
+	const escaped = cell.replace(/"/g, '""');
 	return needsQuote ? `"${escaped}"` : escaped;
 }

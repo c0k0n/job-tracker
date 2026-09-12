@@ -1,71 +1,149 @@
 /**
- * Stub session reader.
+ * Better Auth server module.
  *
- * Reads a placeholder cookie and returns a minimal user shape if present.
- * Returns null otherwise.
+ * Cloudflare Workers gotcha (see docs/better-auth-research.md
+ * "Cloudflare Workers / D1 gotchas"): `betterAuth()` reads `secret` /
+ * `baseURL` at call time, but env bindings only exist per request. The
+ * documented pattern for this combo is building the instance from
+ * request context — so every entry point goes through `getAuth()`,
+ * which resolves `event.platform.env`. `event.platform.env.DB` supplies
+ * the D1 binding.
  *
- * This is intentionally NOT a real auth implementation — it exists only so
- * route guards (`event.locals.user`) and the auth UI flow work end-to-end
- * before we wire Better Auth + D1 in a later phase.
+ * Plugins (order matters — `sveltekitCookies` must be LAST so server
+ * actions like signInEmail write Set-Cookie on the action response):
+ * - `username()` — the auth UI accepts "username or email".
+ * - `admin()` — provides the `role` field + admin API; we use the role
+ *   field for gating /admin/approvals (own route, server-guarded).
  *
- * When we swap in Better Auth, this file becomes:
- *   return (await auth.api.getSession({ headers: event.request.headers }))?.user ?? null;
- * No call sites change.
+ * Sign-up approval gate: `disabled` starts true for every new user; the
+ * create.before database hook flips it to false (+ role admin) when no
+ * enabled user exists yet — the first user bootstraps as approved admin.
+ * Everyone after that waits in /admin/approvals. `disabled` is enforced
+ * in hooks.server.ts and the dashboard load.
  */
 
-import type { Cookies } from '@sveltejs/kit';
-
-const SESSION_COOKIE = 'job-tracker.session';
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from '@better-auth/drizzle-adapter';
+import { sveltekitCookies } from 'better-auth/svelte-kit';
+import { admin, username } from 'better-auth/plugins';
+import { eq } from 'drizzle-orm';
+import { getRequestEvent } from '$app/server';
+import { getDb } from './db';
+import * as schema from './db/schema';
 
 export type SessionUser = {
 	id: string;
-	username: string;
+	username: string | null;
+	displayUsername: string | null;
 	email: string;
+	name: string;
+	role: string;
+	disabled: boolean;
 };
 
-/**
- * The single hardcoded admin identity until a `role` column lands with
- * the backend round (see HANDOFF §2.2). Shared by the admin route guard
- * and the dashboard's Admin queue link so one source of truth drives both.
- */
-export const ADMIN_ID = 'stub-user-id';
+export type AuthInstance = ReturnType<typeof buildAuth>;
 
-export function isAdminUser(user: Pick<SessionUser, 'id'> | null): boolean {
-	return user !== null && user.id === ADMIN_ID;
-}
-
-export function getSession(cookies: Cookies): SessionUser | null {
-	const raw = cookies.get(SESSION_COOKIE);
-	if (!raw) return null;
-	try {
-		const parsed = JSON.parse(raw) as SessionUser;
-		if (
-			typeof parsed.id === 'string' &&
-			typeof parsed.username === 'string' &&
-			typeof parsed.email === 'string'
-		) {
-			return parsed;
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
-export function setSession(cookies: Cookies, user: SessionUser): void {
-	// Stub cookie attributes; Better Auth's setSession will replace this with
-	// the real secure/signed session cookie. For now: HttpOnly so JS can't read
-	// it, SameSite=Lax for CSRF defense on top-level POSTs, no Secure flag so
-	// it works on localhost during dev.
-	cookies.set(SESSION_COOKIE, JSON.stringify(user), {
-		path: '/',
-		httpOnly: true,
-		sameSite: 'lax',
-		secure: false,
-		maxAge: 60 * 60 * 24 * 7
+function buildAuth(env: Env) {
+	return betterAuth({
+		appName: 'Job Tracker',
+		secret: env.BETTER_AUTH_SECRET,
+		baseURL: env.BETTER_AUTH_URL,
+		trustedOrigins: [env.BETTER_AUTH_URL, 'http://localhost:5173'],
+		database: drizzleAdapter(getDb(env.DB), {
+			provider: 'sqlite',
+			// `import * as schema` carries tables AND their relations exports;
+			// the adapter's joins support reads relations from this object
+			// (Better Auth docs "Joins" — every relation must be passed here).
+			schema
+		}),
+		user: {
+			additionalFields: {
+				// Approval gate. Server-owned: written by the create.before
+				// database hook, never accepted from client input.
+				disabled: {
+					type: 'boolean',
+					input: false,
+					defaultValue: true
+				}
+			}
+		},
+		emailAndPassword: {
+			enabled: true,
+			requireEmailVerification: false,
+			minPasswordLength: 8,
+			maxPasswordLength: 128,
+			autoSignIn: true
+		},
+		session: {
+			expiresIn: 60 * 60 * 24 * 7,
+			updateAge: 60 * 60 * 24,
+			cookieCache: {
+				enabled: true,
+				maxAge: 5 * 60,
+				strategy: 'compact'
+			}
+		},
+		advanced: {
+			ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
+			useSecureCookies: true,
+			cookiePrefix: 'job-tracker',
+			database: { generateId: 'uuid', joins: true }
+		},
+		rateLimit: { enabled: true, window: 60, max: 100 },
+		databaseHooks: {
+			user: {
+				create: {
+					before: async (user) => {
+						// First user bootstraps as an approved admin; later
+						// sign-ups wait in the approval queue. getRequestEvent
+						// throws outside request context (CLI/build) and
+						// platform may be undefined — fall back to disabled.
+						let disabled = true;
+						let role = 'user';
+						try {
+							const platform = getRequestEvent().platform;
+							if (platform?.env?.DB) {
+								const db = getDb(platform.env.DB);
+								const existing = await db
+									.select({ id: schema.user.id })
+									.from(schema.user)
+									.where(eq(schema.user.disabled, false))
+									.limit(1)
+									.all();
+								if (existing.length === 0) {
+									disabled = false;
+									role = 'admin';
+								}
+							}
+						} catch {
+							// No request event (CLI/build) — default disabled.
+						}
+						return {
+							data: {
+								...user,
+								disabled,
+								role
+							}
+						};
+					}
+				}
+			}
+		},
+		plugins: [username(), admin(), sveltekitCookies(getRequestEvent)]
 	});
 }
 
-export function clearSession(cookies: Cookies): void {
-	cookies.delete(SESSION_COOKIE, { path: '/' });
+/** Request-scoped auth instance. Call from SvelteKit server context only. */
+export function getAuth(): AuthInstance {
+	const platform = getRequestEvent().platform;
+	if (!platform?.env?.DB) throw new Error('getAuth(): no platform.env.DB binding');
+	return buildAuth(platform.env);
+}
+
+/**
+ * Admin = `role === 'admin'` on the user row (the admin plugin's convention).
+ * Replaces the stub ADMIN_ID check from the pre-backend round.
+ */
+export function isAdminUser(user: Pick<SessionUser, 'role'> | null): boolean {
+	return user !== null && user.role === 'admin';
 }

@@ -29,8 +29,8 @@
 			Sign-up approvals
 		</h1>
 		<p class="mt-1 text-sm text-muted">
-			Review pending accounts. The approve / reject buttons are wired in the backend round (D1 +
-			Better Auth); for now they log to the server console.
+			Accounts wait here until an admin approves them. Approving enables sign-in immediately;
+			rejecting removes the account.
 		</p>
 	</header>
 
@@ -39,7 +39,7 @@
 			role="status"
 			class="mb-4 rounded-md border border-status-active-700 bg-status-active-100 px-3 py-2 text-sm text-status-active-700"
 		>
-			Approved <code class="font-mono">{form.approved}</code>. (Pending backend wiring.)
+			Approved <code class="font-mono">{form.approved}</code>. They can sign in now.
 		</div>
 	{/if}
 	{#if form?.rejected}
@@ -47,7 +47,8 @@
 			role="status"
 			class="mb-4 rounded-md border border-status-stalled-700 bg-status-stalled-100 px-3 py-2 text-sm text-status-stalled-700"
 		>
-			Rejected <code class="font-mono">{form.rejected}</code>. (Pending backend wiring.)
+			Rejected <code class="font-mono">{form.rejected}</code>. The account and its data were
+			removed.
 		</div>
 	{/if}
 
@@ -78,9 +79,6 @@
 									{signup.email}
 								</a>
 							</div>
-							{#if signup.reason}
-								<p class="mt-2 text-sm text-muted">{signup.reason}</p>
-							{/if}
 						</div>
 
 						<div class="flex gap-2">
@@ -115,8 +113,8 @@
 
 	<footer class="mt-12 border-t border-border pt-4 text-xs text-muted">
 		<p>
-			Approve flips the user's <code class="font-mono">disabled</code> flag (backend round). Reject removes
-			the pending record. Both actions log to the server console for now.
+			Approve flips the user's <code class="font-mono">disabled</code> flag so they can sign in. Reject
+			removes the pending account and its data.
 		</p>
 	</footer>
 </div>

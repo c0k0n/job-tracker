@@ -9,11 +9,13 @@ node_modules
 .svelte-kit/
 build/
 
+# Session exports (local-only)
+.agent-sessions/
+
 # Editor and OS files
 .vscode/
-.agents/
 .DS_Store
-Thumbs.db
+.Thumbs.db
 
 # Environment files
 .env

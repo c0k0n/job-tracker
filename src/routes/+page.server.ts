@@ -1,43 +1,65 @@
 import { fail, redirect } from '@sveltejs/kit';
+import { eq } from 'drizzle-orm';
+import { getRequestEvent } from '$app/server';
 import type { Actions, PageServerLoad } from './$types';
-import { setSession } from '$lib/server/auth';
+import { getAuth } from '$lib/server/auth';
+import { getDb } from '$lib/server/db';
+import { user } from '$lib/server/db/schema';
 
 /**
  * Root route — auth surface (sign-in + sign-up tabs).
  *
- * If the visitor already has a session cookie, redirect them to /dashboard
- * so they don't see the auth page.
+ * Real Better Auth round-trip: the action branches on `mode` and calls
+ * `auth.api.signInEmail` / `auth.api.signUpEmail` (server-side call style —
+ * cookies are written by the sveltekitCookies plugin, installed last on the
+ * auth instance). The "username or email" field maps to whichever the input
+ * looks like: an email goes straight through; a bare username is looked up
+ * against the username plugin's column to resolve the email before sign-in.
+ *
+ * If the visitor already has a session, redirect to /dashboard.
  */
 export const load: PageServerLoad = async ({ locals }) => {
-	if (locals.user) {
-		throw redirect(303, '/dashboard');
-	}
+	if (locals.user) throw redirect(303, '/dashboard');
+	// Disabled-but-authenticated: send to the notice page, not the form.
+	if (locals.session) throw redirect(303, '/pending-approval');
 	return {};
 };
 
-/**
- * Stub auth action.
- *
- * Accepts either mode=signin or mode=signup with emailOrUsername + password.
- * Validates shape (length, email-ish, password strength) and pretends to
- * succeed by setting a placeholder session cookie. We will replace this
- * with `auth.api.signInEmail` / `auth.api.signUpEmail` when Better Auth +
- * D1 land. No call sites above this file need to change.
- */
+/** Origin-relative ?next= guard: reject `//` and `/\` tricks (browsers
+ *  normalize `/\` to `//`, an open redirect). */
+function safeNextParam(raw: string): string {
+	if (raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\')) return raw;
+	return '/dashboard';
+}
+
+/** Typed failure wrapper — one declared payload shape so the page's
+ * ActionData union collapses to a single FailPayload instead of
+ * per-call literal types. */
+function authFail(
+	status: 400 | 401 | 500,
+	mode: string,
+	emailOrUsername: string,
+	fieldErrors: FieldErrors
+) {
+	return fail(status, { mode, emailOrUsername, fieldErrors });
+}
+
+interface FieldErrors {
+	emailOrUsername?: string;
+	password?: string;
+	confirm?: string;
+	_form?: string;
+}
+
 export const actions: Actions = {
-	default: async ({ request, cookies, url }) => {
+	default: async ({ request, url }) => {
 		const form = await request.formData();
 		const mode = String(form.get('mode') ?? '');
 		const emailOrUsername = String(form.get('emailOrUsername') ?? '').trim();
 		const password = String(form.get('password') ?? '');
 		const confirm = String(form.get('confirm') ?? '');
 
-		const fieldErrors: {
-			emailOrUsername?: string;
-			password?: string;
-			confirm?: string;
-			_form?: string;
-		} = {};
+		const fieldErrors: FieldErrors = {};
 
 		if (!emailOrUsername) {
 			fieldErrors.emailOrUsername = 'Enter your username or email.';
@@ -68,27 +90,80 @@ export const actions: Actions = {
 		}
 
 		const hasErrors = Object.values(fieldErrors).some((v) => typeof v === 'string' && v.length > 0);
-
 		if (hasErrors) {
-			return fail(400, { mode, emailOrUsername, fieldErrors });
+			return authFail(400, mode, emailOrUsername, fieldErrors);
 		}
 
-		// Stub success. Real auth will hash + verify + look up the user record.
-		// The shape here matches what /dashboard/+page.server.ts expects.
-		setSession(cookies, {
-			id: 'stub-user-id',
-			username: emailOrUsername.includes('@')
-				? (emailOrUsername.split('@')[0] ?? emailOrUsername)
-				: emailOrUsername,
-			email: emailOrUsername.includes('@') ? emailOrUsername : `${emailOrUsername}@stub.local`
-		});
+		const auth = getAuth();
 
-		// Honor an internal `?next=` (set by the dashboard/admin guards when a
-		// logged-out user hits a protected page) so they land back where they
-		// were. We only accept an origin-relative path — never a scheme/host —
-		// to avoid open-redirect via a crafted `next=https://evil.example`.
-		const next = url.searchParams.get('next') ?? '';
-		const nextPath = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+		// Resolve "username or email" to an email for credential sign-in.
+		// The username plugin's signInUsername exists, but resolving here keeps
+		// one code path and lets us surface a uniform error shape.
+		let email = emailOrUsername;
+		if (!email.includes('@')) {
+			const platform = getRequestEvent().platform;
+			if (!platform?.env?.DB) {
+				return authFail(500, mode, emailOrUsername, { _form: 'Database unavailable.' });
+			}
+			const rows = await getDb(platform.env.DB)
+				.select({ email: user.email })
+				.from(user)
+				.where(eq(user.username, emailOrUsername.toLowerCase()))
+				.limit(1)
+				.all();
+			const found = rows[0]?.email;
+			if (!found) {
+				return authFail(400, mode, emailOrUsername, {
+					emailOrUsername: 'No account matches that username.'
+				});
+			}
+			email = found;
+		}
+
+		// Both calls return the authenticated user — the approval gate is
+		// readable straight off the result (the session cookie isn't on
+		// request.headers yet, so a getSession follow-up can't see it).
+		let authUser: { disabled?: boolean } | undefined;
+		try {
+			if (mode === 'signup') {
+				// Sign-up keys the account on a real email; the username
+				// plugin stores the local part as the sign-in handle.
+				if (!emailOrUsername.includes('@')) {
+					return authFail(400, mode, emailOrUsername, {
+						emailOrUsername: 'Sign up with your email; a username can be added after.'
+					});
+				}
+				const username = email.split('@')[0]!;
+				const result = await auth.api.signUpEmail({
+					body: {
+						email,
+						name: username,
+						username,
+						password,
+						callbackURL: safeNextParam(url.searchParams.get('next') ?? '')
+					}
+				});
+				authUser = result?.user ?? null;
+			} else {
+				const result = await auth.api.signInEmail({
+					body: { email, password }
+				});
+				authUser = result?.user ?? null;
+			}
+		} catch (err) {
+			// APIError from better-auth/api surfaces field-agnostic messages.
+			const message =
+				err instanceof Error && err.message ? err.message : 'Authentication failed. Try again.';
+			return authFail(401, mode, emailOrUsername, { _form: message });
+		}
+
+		// Approval gate: first user bootstraps as approved admin; later
+		// sign-ups wait in /admin/approvals.
+		if (authUser?.disabled) {
+			throw redirect(303, '/pending-approval');
+		}
+
+		const nextPath = safeNextParam(url.searchParams.get('next') ?? '');
 		throw redirect(303, nextPath);
 	}
 };

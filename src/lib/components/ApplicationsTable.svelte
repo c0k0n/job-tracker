@@ -88,7 +88,7 @@
 						>
 							Stage
 							{#if sort.key === 'stage'}
-								<span aria-hidden="true">{sort.dir === 'asc' ? '↓' : '↑'}</span>
+								<span aria-hidden="true">{sort.dir === 'asc' ? '↑' : '↓'}</span>
 							{/if}
 						</button>
 					</th>

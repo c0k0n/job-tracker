@@ -99,18 +99,12 @@
 </script>
 
 {#if !hasData}
-	<div
-		class="rounded-lg border border-border bg-surface px-4 py-6 sm:px-5"
-		aria-label="No funnel data"
-	>
+	<div class="rounded-lg border border-border bg-surface px-4 py-6 sm:px-5">
 		<h3 class="font-mono text-[11px] tracking-widest text-muted uppercase">Funnel</h3>
 		<p class="mt-4 text-center text-sm text-muted">No applications yet.</p>
 	</div>
 {:else}
-	<div
-		class="rounded-lg border border-border bg-surface px-4 py-5 sm:px-5"
-		aria-label="Stage conversion funnel"
-	>
+	<div class="rounded-lg border border-border bg-surface px-4 py-5 sm:px-5">
 		<header class="mb-3 flex items-baseline justify-between gap-2">
 			<h3 class="font-mono text-[11px] tracking-widest text-muted uppercase">Funnel</h3>
 			<p class="font-mono text-[11px] text-muted">

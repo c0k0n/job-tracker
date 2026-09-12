@@ -1,12 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { clearSession, isAdminUser } from '$lib/server/auth';
+import { getAuth, isAdminUser } from '$lib/server/auth';
+import { getDb } from '$lib/server/db';
 import {
 	addContact,
 	addInterview,
 	createApplication,
-	getApplicationsForUser,
 	getApplicationDetail,
+	getApplicationsForUser,
+	getStageMoveEvents,
+	getUpcomingInterviews,
 	listTrashedForUser,
 	permanentlyDeleteApplication,
 	restoreApplication,
@@ -15,42 +18,36 @@ import {
 } from '$lib/server/applications-data';
 import { computeKpis } from '$lib/utils/kpis';
 import { parseSalaryFromForm } from '$lib/utils/money';
-
 import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
-import type { ApplicationStage, ApplicationStatus, WorkArrangement } from '$lib/types';
+import { STAGE_VALUES, STATUS_VALUES, ARRANGEMENT_VALUES } from '$lib/constants/stages';
 
 /**
  * Dashboard server load.
  *
- * The security guarantee: if there is no valid session, no code below this
- * line ever runs. The redirect happens before any data is fetched or any
- * page component is rendered. With Better Auth wired later, this exact
- * check (`event.locals.user` populated by the hooks) is the gate.
- *
- * Once Better Auth is in place, add a `disabled` flag to the user record
- * and gate access here:
- *
- *   if (locals.user.disabled) {
- *     throw redirect(303, '/pending-approval');
- *   }
+ * Security: no valid session → no code below the guard runs. locals.user is
+ * populated by hooks.server.ts from the Better Auth session; disabled
+ * (unapproved) users never get here (hooks nulls their user).
  */
-export const load: PageServerLoad = async ({ locals, url }) => {
+
+export const load: PageServerLoad = async ({ locals, platform, url }) => {
 	if (!locals.user) {
 		const next = encodeURIComponent(url.pathname + url.search);
 		throw redirect(303, `/?next=${next}`);
 	}
+	const db = getDb(platform!.env.DB);
 
-	// Trash view toggle: ?trash=1 returns only soft-deleted rows;
-	// default returns only active rows. KPI + chart rollups always
-	// come from the active set — they don't make sense for trashed rows.
-	// `activeApps` is fetched once and reused (the stub is a Map, but this
-	// keeps the call sites honest for when the real DB lands).
+	// Trash view toggle: ?trash=1 returns only soft-deleted rows; default
+	// returns only active rows. KPI + chart rollups always come from the
+	// active set — they don't make sense for trashed rows.
 	const trashView = url.searchParams.get('trash') === '1';
-	const activeApps = getApplicationsForUser(locals.user.id);
-	const applications = trashView ? listTrashedForUser(locals.user.id) : activeApps;
-	const kpis = computeKpis(activeApps);
+	const activeApps = await getApplicationsForUser(db, locals.user.id);
+	const applications = trashView ? await listTrashedForUser(db, locals.user.id) : activeApps;
+	const upcomingInterviews = await getUpcomingInterviews(db, locals.user.id, 30);
+	const kpis = computeKpis(activeApps, upcomingInterviews);
 	const { filters, sort } = parseFiltersFromUrl(url.searchParams);
-	const trashedCount = trashView ? applications.length : listTrashedForUser(locals.user.id).length;
+	const trashedCount = trashView
+		? applications.length
+		: (await listTrashedForUser(db, locals.user.id)).length;
 
 	return {
 		user: locals.user,
@@ -61,78 +58,70 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 		sort,
 		tagFacets: tagFacetsFor(activeApps),
 		trashView,
+		// Server-computed stage-move timestamps for the velocity chart.
+		stageMoves: await getStageMoveEvents(db, locals.user.id),
 		trashedCount,
-		// Round C: when the URL has `?app=<id>`, fetch the detail bundle
-		// server-side so the modal can render without a client-side
-		// server-only import (we don't expose $lib/server/* to the page).
-		activeDetail: (() => {
-			const id = url.searchParams.get('app');
-			if (!id) return null;
-			return getApplicationDetail(locals.user.id, id, { includeTrashed: true });
-		})()
+		// When the URL has `?app=<id>`, fetch the detail bundle server-side
+		// so the modal renders without a client-side server-only import.
+		activeDetail: url.searchParams.get('app')
+			? await getApplicationDetail(db, locals.user.id, url.searchParams.get('app')!, {
+					includeTrashed: true
+				})
+			: null
 	};
 };
 
-/** Coerce a string from FormData into the right union or fail 400. */
+/** Coerce a string from FormData into the right union or null. */
 function pickEnum<T extends string>(form: FormData, key: string, allowed: readonly T[]): T | null {
 	const raw = String(form.get(key) ?? '').trim();
 	return (allowed as readonly string[]).includes(raw) ? (raw as T) : null;
 }
 
-const STAGE_VALUES: readonly ApplicationStage[] = [
-	'saved',
-	'applied',
-	'phone_screen',
-	'technical',
-	'onsite',
-	'final',
-	'offer',
-	'accepted',
-	'rejected',
-	'withdrawn'
-];
-
-const STATUS_VALUES: readonly ApplicationStatus[] = [
-	'active',
-	'stalled',
-	'ghosted',
-	'paused',
-	'closed'
-];
-
-const ARRANGEMENT_VALUES: readonly WorkArrangement[] = [
-	'remote',
-	'hybrid',
-	'onsite',
-	'unspecified'
-];
-
 /**
- * Form actions for the dashboard. Each action returns either:
- *   - `redirect()` to navigate after a state mutation
- *   - `fail()` with field-level errors that the page surfaces
- *
- * Modals that open these actions are closed via SvelteKit's normal
- * `use:enhance` flow — the redirect (when issued) clears `page.state`
- * which closes the shallow-routed modal automatically.
+ * postingUrl scheme allowlist. Any http(s) URL is fine; everything else
+ * (javascript:, data:, …) is rejected — stored XSS via the detail modal's
+ * <a href> would otherwise be reachable.
  */
+function sanitizePostingUrl(raw: string): string | null {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	try {
+		const url = new URL(trimmed);
+		if (url.protocol === 'http:' || url.protocol === 'https:') return url.toString();
+	} catch {
+		// fall through
+	}
+	return null;
+}
+
+/** Parse an ISO/date-input value; null when empty, undefined when absent
+ * from the form (edit semantics differ per field). */
+function parseDateInput(raw: string): Date | null | 'invalid' {
+	const trimmed = raw.trim();
+	if (!trimmed) return null;
+	const d = new Date(trimmed);
+	return Number.isNaN(d.getTime()) ? 'invalid' : d;
+}
+
 export const actions: Actions = {
 	/**
-	 * Sign out. Named (not `default`) because SvelteKit forbids a default
-	 * action alongside named actions (docs/kit/form-actions#named-actions).
-	 * The dashboard's sign-out form posts to `?/signout`.
+	 * Sign out via Better Auth (clears the session row + cookie). Named
+	 * (not `default`) because SvelteKit forbids default alongside named
+	 * actions.
 	 */
-	signout: async ({ cookies }) => {
-		clearSession(cookies);
+	signout: async ({ request }) => {
+		const auth = getAuth();
+		await auth.api.signOut({ headers: request.headers });
 		throw redirect(303, '/');
 	},
 
 	/**
-	 * Create a new application from the "+ Add application" modal.
-	 * Returns 400 on validation errors; 303 back to /dashboard on success.
+	 * Create a new application. 400 with field errors on validation;
+	 * 303 back to /dashboard on success.
 	 */
-	create: async ({ request, locals }) => {
+	create: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
+		const db = getDb(platform!.env.DB);
 		const form = await request.formData();
 
 		const company = String(form.get('company') ?? '').trim();
@@ -140,12 +129,12 @@ export const actions: Actions = {
 		const stage = pickEnum(form, 'stage', STAGE_VALUES);
 		const status = pickEnum(form, 'status', STATUS_VALUES);
 		const workArrangement = pickEnum(form, 'workArrangement', ARRANGEMENT_VALUES);
-		const postingUrl = String(form.get('postingUrl') ?? '').trim() || null;
+		const postingUrl = sanitizePostingUrl(String(form.get('postingUrl') ?? ''));
 		const postingDescription = String(form.get('postingDescription') ?? '').trim() || null;
 		const notes = String(form.get('notes') ?? '').trim() || null;
 		const resumeId = String(form.get('resumeId') ?? '').trim() || null;
-		const appliedAt = String(form.get('appliedAt') ?? '').trim() || null;
-		const nextActionAt = String(form.get('nextActionAt') ?? '').trim() || null;
+		const appliedAt = parseDateInput(String(form.get('appliedAt') ?? ''));
+		const nextActionAt = parseDateInput(String(form.get('nextActionAt') ?? ''));
 		const tagsRaw = String(form.get('tags') ?? '').trim();
 		const tags = tagsRaw
 			? tagsRaw
@@ -169,13 +158,24 @@ export const actions: Actions = {
 			status?: string;
 			workArrangement?: string;
 			salary?: string;
+			appliedAt?: string;
+			nextActionAt?: string;
 		} = { ...salaryErrors };
 		if (!company) errors.company = 'Company is required.';
 		if (!role) errors.role = 'Role is required.';
 		if (!stage) errors.stage = 'Pick a stage.';
 		if (!status) errors.status = 'Pick a status.';
 		if (!workArrangement) errors.workArrangement = 'Pick a work arrangement.';
-		if (Object.keys(errors).length > 0 || !stage || !status || !workArrangement) {
+		if (appliedAt === 'invalid') errors.appliedAt = 'Enter a valid date.';
+		if (nextActionAt === 'invalid') errors.nextActionAt = 'Enter a valid date.';
+		if (
+			Object.keys(errors).length > 0 ||
+			!stage ||
+			!status ||
+			!workArrangement ||
+			appliedAt === 'invalid' ||
+			nextActionAt === 'invalid'
+		) {
 			return fail(400, {
 				operation: 'create',
 				values: {
@@ -184,12 +184,12 @@ export const actions: Actions = {
 					stage,
 					status,
 					workArrangement,
-					postingUrl,
+					postingUrl: postingUrl ?? '',
 					postingDescription,
 					notes,
 					resumeId,
-					appliedAt,
-					nextActionAt,
+					appliedAt: String(form.get('appliedAt') ?? ''),
+					nextActionAt: String(form.get('nextActionAt') ?? ''),
 					tagsRaw,
 					salaryShape: String(form.get('salaryShape') ?? ''),
 					salaryCurrency: String(form.get('salaryCurrency') ?? ''),
@@ -201,7 +201,7 @@ export const actions: Actions = {
 			});
 		}
 
-		createApplication(locals.user.id, {
+		await createApplication(db, locals.user.id, {
 			company,
 			role,
 			stage,
@@ -212,8 +212,8 @@ export const actions: Actions = {
 			postingDescription,
 			notes,
 			resumeId,
-			appliedAt,
-			nextActionAt,
+			appliedAt: appliedAt ? appliedAt.toISOString() : null,
+			nextActionAt: nextActionAt ? nextActionAt.toISOString() : null,
 			tags
 		});
 
@@ -221,13 +221,12 @@ export const actions: Actions = {
 	},
 
 	/**
-	 * Edit an existing application. The full edit form posts all
-	 * fields, so this is a partial PATCH (whatever was submitted is
-	 * merged). Stage changes bump stageChangedAt (handled by the
-	 * data layer) and append an activity event.
+	 * Edit an existing application. The full edit form posts all fields;
+	 * empty values clear (user intent), absent keys keep the stored value.
 	 */
-	edit: async ({ request, locals }) => {
+	edit: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
+		const db = getDb(platform!.env.DB);
 		const form = await request.formData();
 		const id = String(form.get('id') ?? '');
 		if (!id) return fail(400, { operation: 'edit', errors: { id: 'Missing id.' } });
@@ -235,13 +234,12 @@ export const actions: Actions = {
 		const stage = pickEnum(form, 'stage', STAGE_VALUES);
 		const status = pickEnum(form, 'status', STATUS_VALUES);
 		const workArrangement = pickEnum(form, 'workArrangement', ARRANGEMENT_VALUES);
-		const postingUrl = String(form.get('postingUrl') ?? '').trim() || null;
+		const postingUrl = sanitizePostingUrl(String(form.get('postingUrl') ?? ''));
 		const postingDescription = String(form.get('postingDescription') ?? '').trim() || null;
 		const notes = String(form.get('notes') ?? '').trim() || null;
 		const resumeId = String(form.get('resumeId') ?? '').trim() || null;
-		const appliedAt = String(form.get('appliedAt') ?? '').trim() || null;
-		// Read nextActionAt from form; empty string clears it (user intent), non-empty preserves.
-		const nextActionAt = String(form.get('nextActionAt') ?? '').trim() || null;
+		const appliedAt = parseDateInput(String(form.get('appliedAt') ?? ''));
+		const nextActionAt = parseDateInput(String(form.get('nextActionAt') ?? ''));
 		const tagsRaw = String(form.get('tags') ?? '').trim();
 		const tags = tagsRaw
 			? tagsRaw
@@ -257,7 +255,12 @@ export const actions: Actions = {
 			String(form.get('salaryMax') ?? '') || null
 		);
 
-		if (Object.keys(salaryErrors).length > 0) {
+		const errors: { salary?: string; appliedAt?: string; nextActionAt?: string } = {
+			...salaryErrors
+		};
+		if (appliedAt === 'invalid') errors.appliedAt = 'Enter a valid date.';
+		if (nextActionAt === 'invalid') errors.nextActionAt = 'Enter a valid date.';
+		if (Object.keys(errors).length > 0 || appliedAt === 'invalid' || nextActionAt === 'invalid') {
 			return fail(400, {
 				operation: 'edit',
 				values: {
@@ -266,12 +269,12 @@ export const actions: Actions = {
 					stage,
 					status,
 					workArrangement,
-					postingUrl,
+					postingUrl: postingUrl ?? '',
 					postingDescription,
 					notes,
 					resumeId,
-					appliedAt,
-					nextActionAt,
+					appliedAt: String(form.get('appliedAt') ?? ''),
+					nextActionAt: String(form.get('nextActionAt') ?? ''),
 					tagsRaw,
 					salaryShape: String(form.get('salaryShape') ?? ''),
 					salaryCurrency: String(form.get('salaryCurrency') ?? ''),
@@ -279,11 +282,11 @@ export const actions: Actions = {
 					salaryMin: String(form.get('salaryMin') ?? ''),
 					salaryMax: String(form.get('salaryMax') ?? '')
 				},
-				errors: salaryErrors
+				errors
 			});
 		}
 
-		const updated = updateApplication(locals.user.id, id, {
+		const updated = await updateApplication(db, locals.user.id, id, {
 			company: String(form.get('company') ?? '').trim() || undefined,
 			role: String(form.get('role') ?? '').trim() || undefined,
 			stage: stage ?? undefined,
@@ -293,8 +296,8 @@ export const actions: Actions = {
 			postingDescription,
 			notes,
 			resumeId,
-			appliedAt,
-			nextActionAt,
+			appliedAt: appliedAt ? appliedAt.toISOString() : null,
+			nextActionAt: nextActionAt ? nextActionAt.toISOString() : null,
 			salary,
 			tags
 		});
@@ -304,73 +307,62 @@ export const actions: Actions = {
 	},
 
 	/** Move an application to trash (soft-delete). */
-	delete: async ({ request, locals }) => {
+	delete: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
+		const db = getDb(platform!.env.DB);
+		const id = String((await request.formData()).get('id') ?? '');
 		if (!id) return fail(400, { operation: 'delete', errors: { id: 'Missing id.' } });
-		const result = softDeleteApplication(locals.user.id, id);
+		const result = await softDeleteApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'delete', errors: { id: 'Not found.' } });
 		throw redirect(303, '/dashboard');
 	},
 
 	/** Restore from trash back to active view. */
-	restore: async ({ request, locals }) => {
+	restore: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
+		const db = getDb(platform!.env.DB);
+		const id = String((await request.formData()).get('id') ?? '');
 		if (!id) return fail(400, { operation: 'restore', errors: { id: 'Missing id.' } });
-		const result = restoreApplication(locals.user.id, id);
+		const result = await restoreApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'restore', errors: { id: 'Not found.' } });
 		throw redirect(303, '/dashboard?trash=1');
 	},
 
 	/** Hard-delete (irreversible). */
-	purge: async ({ request, locals }) => {
+	purge: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
-		const form = await request.formData();
-		const id = String(form.get('id') ?? '');
+		const db = getDb(platform!.env.DB);
+		const id = String((await request.formData()).get('id') ?? '');
 		if (!id) return fail(400, { operation: 'purge', errors: { id: 'Missing id.' } });
-		const result = permanentlyDeleteApplication(locals.user.id, id);
+		const result = await permanentlyDeleteApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'purge', errors: { id: 'Not found.' } });
 		throw redirect(303, '/dashboard?trash=1');
 	},
 
-	/** Add an interview record to an application. */
-	addInterview: async ({ request, locals }) => {
+	/** Add an interview record. Unparseable dates are rejected, never stored. */
+	addInterview: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
+		const db = getDb(platform!.env.DB);
 		const form = await request.formData();
 		const applicationId = String(form.get('applicationId') ?? '');
 		const kindRaw = String(form.get('kind') ?? '');
-		const allowedKinds = [
-			'phone_screen',
-			'technical',
-			'onsite',
-			'final',
-			'coffee_chat',
-			'other'
-		] as const;
-		const kind = (allowedKinds as readonly string[]).includes(kindRaw)
-			? (kindRaw as (typeof allowedKinds)[number])
-			: null;
+		const kind = (
+			['phone_screen', 'technical', 'onsite', 'final', 'coffee_chat', 'other'] as const
+		).find((k) => k === kindRaw);
 		const scheduledAtRaw = String(form.get('scheduledAt') ?? '').trim();
-		const parsedDate = new Date(scheduledAtRaw);
-		const scheduledAt =
-			!Number.isNaN(parsedDate.getTime()) && scheduledAtRaw
-				? parsedDate.toISOString()
-				: scheduledAtRaw;
+		const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
 		const withName = String(form.get('withName') ?? '').trim() || null;
 		const notes = String(form.get('notes') ?? '').trim() || null;
 
-		if (!applicationId || !kind || !scheduledAt) {
+		if (!applicationId || !kind || !scheduledAt || Number.isNaN(scheduledAt.getTime())) {
 			return fail(400, {
 				operation: 'addInterview',
-				errors: { form: 'Kind, scheduledAt, and applicationId are required.' }
+				errors: { form: 'A valid kind, date, and application are required.' }
 			});
 		}
-		const result = addInterview(locals.user.id, applicationId, {
+		const result = await addInterview(db, locals.user.id, applicationId, {
 			kind,
-			scheduledAt,
+			scheduledAt: scheduledAt.toISOString(),
 			durationMinutes: null,
 			withName,
 			withRole: null,
@@ -381,9 +373,10 @@ export const actions: Actions = {
 		throw redirect(303, '/dashboard');
 	},
 
-	/** Add a contact record to an application. */
-	addContact: async ({ request, locals }) => {
+	/** Add a contact record. */
+	addContact: async ({ request, locals, platform }) => {
 		if (!locals.user) throw redirect(303, '/');
+		const db = getDb(platform!.env.DB);
 		const form = await request.formData();
 		const applicationId = String(form.get('applicationId') ?? '');
 		const name = String(form.get('name') ?? '').trim();
@@ -398,7 +391,7 @@ export const actions: Actions = {
 				errors: { name: 'Name is required.' }
 			});
 		}
-		const result = addContact(locals.user.id, applicationId, {
+		const result = await addContact(db, locals.user.id, applicationId, {
 			name,
 			role,
 			company,

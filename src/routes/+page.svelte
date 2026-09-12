@@ -32,6 +32,27 @@
 	function select(next: Mode) {
 		mode = next;
 	}
+
+	// WAI-ARIA tabs pattern: arrow keys move between tabs, Home/End jump to
+	// the ends. Focus follows selection so keyboard users aren't stranded.
+	function onTabKeydown(e: KeyboardEvent) {
+		const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+		if (!keys.includes(e.key)) return;
+		e.preventDefault();
+		const prev = mode === 'signin' ? 'signup' : 'signin';
+		const nextMode: Mode =
+			e.key === 'ArrowRight' || e.key === 'End'
+				? 'signup'
+				: e.key === 'ArrowLeft' || e.key === 'Home'
+					? 'signin'
+					: prev;
+		mode = nextMode;
+		// Focus the newly selected tab.
+		queueMicrotask(() => {
+			const id = nextMode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup';
+			document.getElementById(id)?.focus();
+		});
+	}
 </script>
 
 <svelte:head>
@@ -80,6 +101,7 @@
 			aria-controls={signinPanelId}
 			aria-selected={mode === 'signin'}
 			tabindex={mode === 'signin' ? 0 : -1}
+			onkeydown={onTabKeydown}
 			onclick={() => select('signin')}
 			class="-mb-px cursor-pointer border-b-2 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 			class:border-accent={mode === 'signin'}
@@ -96,6 +118,7 @@
 			aria-controls={signupPanelId}
 			aria-selected={mode === 'signup'}
 			tabindex={mode === 'signup' ? 0 : -1}
+			onkeydown={onTabKeydown}
 			onclick={() => select('signup')}
 			class="-mb-px cursor-pointer border-b-2 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 			class:border-accent={mode === 'signup'}

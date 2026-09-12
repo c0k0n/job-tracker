@@ -1,6 +1,6 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
-import type { SessionUser } from '$lib/server/auth';
+import type { AuthInstance } from '$lib/server/auth';
 
 declare global {
 	namespace App {
@@ -17,15 +17,12 @@ declare global {
 			code?: string;
 		}
 
-		// Per-request locals populated by src/hooks.server.ts.
-		// `user` is null when the request has no valid session.
-		// When we wire Better Auth this gains `session` alongside `user`.
+		// Per-request locals populated by src/hooks.server.ts from the Better
+		// Auth session. `user` is null when the request has no valid session.
 		interface Locals {
-			user: SessionUser | null;
+			user: AuthInstance.$Infer.Session.user | null;
+			session: AuthInstance.$Infer.Session.session | null;
 		}
-
-		// interface PageData {}
-		// interface PageState {}
 	}
 }
 

@@ -33,6 +33,28 @@
 	type Tab = 'overview' | 'interviews' | 'contacts' | 'activity';
 	let activeTab = $state<Tab>('overview');
 
+	// WAI-ARIA tabs: arrow keys move between tabs, Home/End to the ends.
+	// Focus follows selection (roving tabindex is on the buttons).
+	const TABS: Tab[] = ['overview', 'interviews', 'contacts', 'activity'];
+	function onTabKeydown(e: KeyboardEvent) {
+		if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+		e.preventDefault();
+		const idx = TABS.indexOf(activeTab);
+		const delta =
+			e.key === 'ArrowRight'
+				? 1
+				: e.key === 'ArrowLeft'
+					? -1
+					: e.key === 'End'
+						? TABS.length
+						: -idx;
+		const nextTab = TABS[(idx + delta + TABS.length) % TABS.length]!;
+		activeTab = nextTab;
+		queueMicrotask(() => {
+			document.getElementById(`app-tab-${nextTab}-btn`)?.focus();
+		});
+	}
+
 	// Two-way bound modal open state, mirrored from the `?app=` query
 	// param. A writable `$derived` (Svelte >= 5.25) keeps the bindable
 	// `bind:open` contract with the Modal primitive while staying a pure
@@ -131,6 +153,8 @@
 				aria-selected={activeTab === 'overview'}
 				aria-controls="app-tab-overview"
 				id="app-tab-overview-btn"
+				tabindex={activeTab === 'overview' ? 0 : -1}
+				onkeydown={onTabKeydown}
 				onclick={() => (activeTab = 'overview')}
 				class={tabButtonClass('overview')}
 			>
@@ -142,6 +166,8 @@
 				aria-selected={activeTab === 'interviews'}
 				aria-controls="app-tab-interviews"
 				id="app-tab-interviews-btn"
+				tabindex={activeTab === 'interviews' ? 0 : -1}
+				onkeydown={onTabKeydown}
 				onclick={() => (activeTab = 'interviews')}
 				class={tabButtonClass('interviews')}
 			>
@@ -153,6 +179,8 @@
 				aria-selected={activeTab === 'contacts'}
 				aria-controls="app-tab-contacts"
 				id="app-tab-contacts-btn"
+				tabindex={activeTab === 'contacts' ? 0 : -1}
+				onkeydown={onTabKeydown}
 				onclick={() => (activeTab = 'contacts')}
 				class={tabButtonClass('contacts')}
 			>
@@ -164,13 +192,14 @@
 				aria-selected={activeTab === 'activity'}
 				aria-controls="app-tab-activity"
 				id="app-tab-activity-btn"
+				tabindex={activeTab === 'activity' ? 0 : -1}
+				onkeydown={onTabKeydown}
 				onclick={() => (activeTab = 'activity')}
 				class={tabButtonClass('activity')}
 			>
 				Activity <span class="opacity-70">· {activities.length}</span>
 			</button>
 		</div>
-
 		<div class="px-6 py-5">
 			{#if activeTab === 'overview'}
 				<div
@@ -275,6 +304,9 @@
 							<iframe
 								title={`Resume preview for ${app.company}`}
 								src={resumeUrl}
+								sandbox="allow-same-origin"
+								referrerpolicy="no-referrer"
+								loading="lazy"
 								class="h-64 w-full rounded-md border border-border bg-surface-2"
 							></iframe>
 							<p class="mt-1 text-xs text-muted">

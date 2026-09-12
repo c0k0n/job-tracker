@@ -1,0 +1,12 @@
+# Local development secrets — copy to .dev.vars and fill in.
+# .dev.vars is gitignored; this example file is committed as documentation.
+# Cloudflare Workers local dev reads .dev.vars (do NOT also create .env —
+# if both exist, .dev.vars wins and .env is ignored).
+
+# Password/session signing secret. Generate: openssl rand -hex 32
+BETTER_AUTH_SECRET=change-me-generate-with-openssl-rand-hex-32
+
+# Origin the auth routes mount under. Must match the port you actually
+# serve on: 5173 for `bun run dev`, 8787 for `wrangler dev --port 8787`
+# (override in .dev.vars when switching — a mismatch makes /api/auth/* 404).
+BETTER_AUTH_URL=http://localhost:5173

@@ -10,5 +10,8 @@ bun.lockb
 /static/
 worker-configuration.d.ts
 
-# Agents
-.agents/
+# Docs are long research notes with intentionally preserved formatting
+/docs/
+# Session exports / scratch
+session-*.md
+.dev.vars

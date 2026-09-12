@@ -2,10 +2,29 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "job-tracker",
 	"compatibility_date": "2026-08-28",
+	// Minimum Better Auth needs on Workers: AsyncLocalStorage for request context.
+	"compatibility_flags": ["nodejs_als"],
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "job-tracker",
+			"database_id": "74664605-5d21-4a7a-a348-c20eab7edd1c",
+			// Drizzle owns migrations (drizzle-kit generate emits flat
+			// migrations/NNNN_name.sql files in 0.4x; the nested per-folder
+			// layout is Drizzle 1.0 RC's new output).
+			"migrations_dir": "migrations",
+			"migrations_pattern": "migrations/*.sql"
+		}
+	],
+	// Non-secret config. BETTER_AUTH_SECRET is a `wrangler secret put` value,
+	// never committed.
+	"vars": {
+		"BETTER_AUTH_URL": "http://localhost:5173"
 	},
 	"workers_dev": true,
 	"preview_urls": true,

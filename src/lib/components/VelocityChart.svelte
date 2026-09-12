@@ -4,12 +4,15 @@
 
 	interface Props {
 		apps: readonly Application[];
+		/** Server-computed stage-change timestamps (ISO), for the
+		 * transitions line. Falls back to stageChangedAt-only when absent. */
+		stageMoves?: readonly { occurredAt: string }[];
 		/** Window in days. 90 is a good balance — long enough to show
 		 * trends, short enough to render at a sensible resolution. */
 		windowDays?: number;
 	}
 
-	let { apps, windowDays = 90 }: Props = $props();
+	let { apps, stageMoves = [], windowDays = 90 }: Props = $props();
 
 	type DayPoint = {
 		date: Date;
@@ -46,18 +49,16 @@
 					if (point) point.applied += 1;
 				}
 			}
-			// "transition" event on stageChangedAt (if it's not the same
-			// day as appliedAt — counting the same day twice is misleading)
-			const appliedDay = a.appliedAt
-				? new Date(new SvelteDate(a.appliedAt).setHours(0, 0, 0, 0)).getTime()
-				: null;
-			const scd = new SvelteDate(a.stageChangedAt);
+		}
+		// "transition" events come from the activity timeline (server-passed
+		// stageMoves), so multi-step progressions count every move, not just
+		// the latest stage entry.
+		for (const move of stageMoves) {
+			const scd = new SvelteDate(move.occurredAt);
 			scd.setHours(0, 0, 0, 0);
-			if (appliedDay === scd.getTime()) continue;
-			const ms2 = today.getTime() - scd.getTime();
-			const dayIdx2 = windowDays - 1 - Math.floor(ms2 / (24 * 60 * 60 * 1000));
-			if (dayIdx2 >= 0 && dayIdx2 < days.length) {
-				const point = days[dayIdx2];
+			const dayIdx = windowDays - 1 - Math.floor((today.getTime() - scd.getTime()) / 86400000);
+			if (dayIdx >= 0 && dayIdx < days.length) {
+				const point = days[dayIdx];
 				if (point) point.transitions += 1;
 			}
 		}
@@ -135,12 +136,10 @@
 {#if !hasData}
 	<!--
 		Empty state. The line shape would be flat at zero; we skip the SVG
-		entirely and show a quiet prompt.
+		entirely and show a quiet prompt. (An aria-label on a plain div is
+		ignored by AT — the sr-only heading below carries the semantics.)
 	-->
-	<div
-		class="rounded-lg border border-border bg-surface px-4 py-6 sm:px-5"
-		aria-label="No application activity in the selected window"
-	>
+	<div class="rounded-lg border border-border bg-surface px-4 py-6 sm:px-5">
 		<header class="mb-3 flex items-baseline justify-between gap-2">
 			<h3 class="font-mono text-[11px] tracking-widest text-muted uppercase">
 				Activity · last {windowDays} days
@@ -150,10 +149,7 @@
 		<p class="text-center text-sm text-muted">No activity yet.</p>
 	</div>
 {:else}
-	<div
-		class="rounded-lg border border-border bg-surface px-4 py-5 sm:px-5"
-		aria-label="Daily application and stage-transition activity over the last {windowDays} days"
-	>
+	<div class="rounded-lg border border-border bg-surface px-4 py-5 sm:px-5">
 		<header class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
 			<h3 class="font-mono text-[11px] tracking-widest text-muted uppercase">
 				Activity · last {windowDays} days

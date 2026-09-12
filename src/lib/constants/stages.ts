@@ -105,3 +105,5 @@ export const ARRANGEMENT_BY_VALUE: Record<WorkArrangement, ArrangementMeta> = AR
 	},
 	{} as Record<WorkArrangement, ArrangementMeta>
 );
+
+export const ARRANGEMENT_VALUES: readonly WorkArrangement[] = ARRANGEMENTS.map((a) => a.value);

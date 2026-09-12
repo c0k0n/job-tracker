@@ -1,44 +1,49 @@
 # AGENTS.md
 
-Bun + SvelteKit 2 (Svelte 5 runes-only) + Tailwind v4 + `adapter-cloudflare`, deployed as a Cloudflare Worker. Pre-feature starter: placeholder `+page.svelte`, no DB/auth yet.
+Rules for AI agents working in this repo. **docs/ research files are the source of truth for stack behavior**; this file defines how to work, not what the code is. README.md covers project overview and architecture.
 
-## Commands (bun, not npm)
+## Sourcing (binding priority)
 
-- `bun run dev` — local dev (`vite dev`)
-- `bun run build` — `vite build` + `adapter-cloudflare`
-- `bun run check` — `svelte-kit sync && wrangler types --check && svelte-check`; must pass before done
-- `bun run lint` — `prettier --check . && eslint .`
-- `bun run format` — `prettier --write .`
-- `bun run preview` / `deploy` — `bun run build && wrangler dev` / `wrangler deploy`
-- No tests, no CI, `README.md` is empty. `wrangler` is via `bunx` (no global install).
+1. **`docs/` research files** — sveltekit, better-auth, drizzle, cloudflare, tailwind-v4. Before, during, and after any nontrivial change: read the relevant research file and cross-check the API surface you are using. When research and code disagree, fix the stale one and note it in the research file.
+2. **MCP servers** — prefer MCP tools over web fetches/search for any provider that has one wired (Svelte, Better Auth, Cloudflare docs, etc.). MCP output is primary documentation.
+3. **Vendor docs** — official domains only (svelte.dev, better-auth.com, developers.cloudflare.com, tailwindcss.com, orm.drizzle.team). Third-party blogs/Medium/AI-written summaries are never authoritative. If official sources conflict, the more recent / MCP-sourced one wins; flag the conflict in docs/.
+4. **Your own training** — last. "It probably works" is not acceptance; the documented behavior is.
 
-## Quirks agents miss
+When a research file is updated (or added), its content binds the next change touching that area.
 
-- **No `svelte.config.js`.** SvelteKit config lives in `vite.config.ts` via `sveltekit({ adapter: adapter() })`. Do not create one.
-- **Runes forced on** in `vite.config.ts` (`runes: true` outside `node_modules`). Write `$props()`, `$state()`, `$derived()`, `$effect()` only; legacy `export let` / `$:` will fail.
-- **Tailwind v4 CSS-first.** No `tailwind.config.js` / PostCSS. Tokens/plugins go in `src/routes/layout.css` (currently just `@import 'tailwindcss'`). Vite plugin is already wired.
-- **`worker-configuration.d.ts` is generated** by `wrangler types --check` (part of `check`). Don't hand-edit; regen instead. It is `.prettierignore`d but **not** eslint-ignored — the 2 `Unused eslint-disable directive` warnings from `bun run lint` are pre-existing noise from this file.
-- **`wrangler.jsonc` is minimal**: `main: .svelte-kit/cloudflare/_worker.js`, `assets.directory: .svelte-kit/cloudflare`, `observability.enabled`. No D1/KV/R2 bindings, no `compatibility_flags` yet. Adding auth/DB libs needing `node:crypto`/`node:async_hooks` requires `compatibility_flags: ["nodejs_als"]`.
-- **TS is strict** (`noUncheckedIndexedAccess`, `noUnusedLocals/Parameters` on). `svelte-check` enforces it.
-- **Prettier style**: tabs, single quotes, no trailing commas, `prettier-plugin-svelte` + `prettier-plugin-tailwindcss` (`tailwindStylesheet: ./src/routes/layout.css`).
-- **`src/app.d.ts`**: declares `App.Platform` (env/ctx/caches/cf?), `App.Locals` (user: SessionUser | null), `App.Error` (code?: string), and `App.PageState` (Round C, currently unused). The `App.Locals.user` is populated by `src/hooks.server.ts` from the stub session cookie; Better Auth replaces this. `$lib/server` is server-only (build blocks client imports).
+## Hard constraints
 
-## Layout
+- **Bun, not npm.** `bun run <script>`; wrangler via `bunx`.
+- **TypeScript only.** No `.js` / `.mjs` / `.cjs` source files (scripts in `scripts/` included). `.ts`, `.svelte` with `<script lang="ts">`, generated `.d.ts` only.
+- **Svelte 5 runes-only.** `vite.config.ts` forces `runes: true`. Write `$props()`, `$state()`, `$derived()`, `$effect()` only; legacy `export let` / `$:` fails.
+- **Free-tier Cloudflare Workers only.** No paid add-ons, no Workers Paid, no always-on Durable Objects, no paid R2/KV. Validate any new binding against `docs/cloudflare-research.md` first.
+- **No `svelte.config.js`.** SvelteKit config lives in `vite.config.ts` via `sveltekit({ adapter: adapter() })`.
+- **Tailwind v4 CSS-first.** No `tailwind.config.js`, no PostCSS. All tokens (`@theme` + dark overrides) in `src/routes/layout.css`.
+- **Playwright suites stay outside the repo tree** (`/tmp/pw-tests/`), never committed.
+- **`worker-configuration.d.ts` is generated** (wrangler types). Never hand-edit; regenerate via `bun run check` / `bun run types`.
+- **Never edit files in `migrations/` by hand.** They are drizzle-kit output; change `src/lib/server/db/schema.ts` and run `bun run db:generate`.
+- **`goto()` must use `resolvePath()` from `$app/paths`** (svelte/no-navigation-without-resolve). Never disable ESLint rules to ship.
+- **`static/.assetsignore`** excludes `_worker.js` / `_routes.json` from static serving — leave it.
 
-- `src/routes/+layout.svelte` imports `layout.css`, sets favicon, renders `{@render children()}`.
-- `static/.assetsignore` excludes `_worker.js` / `_routes.json` from static serving — leave it.
-- `.agents/` (local research/plan notes and project-local skills) is **gitignored** — present locally, absent on fresh clone. Don't reference it as if committed, and don't commit it.
+## Conventions
 
-## Operating principles (non-negotiable)
+- **Prettier**: tabs, single quotes, no trailing commas; `prettier-plugin-svelte` + `prettier-plugin-tailwindcss`.
+- **TS strict**: `noUncheckedIndexedAccess`, `noUnusedLocals/Parameters` on. `svelte-check` enforces.
+- **Money**: integer minor units everywhere. Never floats.
+- **Dates**: ISO strings in domain types; unix seconds in D1. Row mappers in `src/lib/server/db/schema.ts` are the only conversion point.
+- **Data layer**: every function takes the per-request `Db` + acting userId; every query filters on userId.
+- **Better Auth is request-scoped** — `getAuth()` builds from `getRequestEvent().platform.env`, never at module init. `sveltekitCookies` stays the LAST plugin.
+- **Approval gate**: sign-ups start `disabled: true` (server-owned, `input: false`); first user bootstraps as approved admin. Enforced in `hooks.server.ts` + dashboard load.
+- **Scripts never ship**: `scripts/` is dev-only tooling (local seed), `migrations/` is drizzle-kit output applied via wrangler. Neither is bundled; both are committed.
 
-- **Deployment target: Cloudflare Workers — free tier only.** Every dependency, binding, runtime limit, and feature must fit the Workers free plan (no paid add-ons, no Workers Paid, no always-on Durable Objects, no paid R2/KV beyond free quotas). Validate against `.agents/research/cloudflare-research.md` before adding any binding or service.
-- **TypeScript only.** No `.js` / `.mjs` / `.cjs` source files. Use `.ts`, `.svelte` (with `<script lang="ts">`), and generated `.d.ts`. If a tool insists on JS output (e.g. a config example in a doc), port it to TS.
-- **`.agents/` is the source of truth.** Files under `.agents/research/` (and the project-local `.agents/skills/`) are absolute, authoritative knowledge for this project. They reflect current behavior of the pinned stack versions and override anything in pre-training. Before, during, and after writing code: re-read the relevant research file and cross-check the API surface you are using.
-  - Entry point: `.agents/research/INDEX.md` → `job-tracker-research.md` (playbook) → per-stack deep dives.
-  - When a research file is updated (or a new one added), treat the new content as binding on the next change touching that area.
-- **Skills and MCPs first.** Discover and load global skills (`skills_list` → `skill_view`) before reasoning about a task; load local skills from `.agents/skills/` similarly. Prefer MCP servers over web fetches/search for any provider that has one wired (Svelte, Better Auth, Cloudflare docs, Microsoft Learn, Angular, Astro, Playwright, Chrome DevTools, etc.). MCP output is treated as primary documentation.
-- **Web fetch / web search is a last resort.** When unavoidable, only trust **official documentation** (vendor-owned domains like `svelte.dev`, `developers.cloudflare.com`, `tailwindcss.com`, `orm.drizzle.team`, `kit.svelte.dev`). Never act on third-party blogs, Medium posts, or AI-written summaries as if they were authoritative. If official docs contradict each other, the more recent / MCP-sourced one wins, and flag the conflict in `.agents/research/`.
-- **Consult before, during, and after coding.** Every nontrivial change: read the relevant research file first, draft the change, re-check the research/API surface mid-edit, then verify against research again before declaring done. "It probably works" is not acceptance — the documented behavior is.
-- **Code quality bar.** Semantic HTML, accessibility (WCAG 2.2 AA target), security, and performance are first-class — not polish at the end. Code must be short, efficient, readable, and trackable: split into components, keep separation of concerns, no monolithic files. Follow current best practices from the research files — not pre-training habits.
-- **No rushed edits.** Never patch a file because it "looks fine" or the diff is tiny. Look up the correct modern pattern in research / MCP docs first, even for one-line changes. If unsure, add a research note under `.agents/research/` before editing.
-- **UI / UX / design.** For visual, interaction, and design-system work, lean on global skills to the fullest: `ui-ux-pro-max`, `impeccable`, `design-taste-frontend`, `frontend-design`, `design`, `design-critique`, `accessibility-review`, `web-design-guidelines`, `web-perf`, `apple-design`, `industrial-brutalist-ui`, `minimalist-ui`, etc. Always discover what's available first; pick the skill whose trigger matches the problem, and load it before producing UI.
+## Code quality bar
+
+Semantic HTML, accessibility (WCAG 2.2 AA target), security, and performance are first-class — not polish at the end. Code must be short, efficient, readable, trackable: split into components, separation of concerns, no monolithic files. Follow current best practices from the research files — not pre-training habits.
+
+Never patch a file because it "looks fine" or the diff is tiny. Look up the correct modern pattern in research / MCP docs first, even for one-line changes. If unsure, add a research note under `docs/` before editing.
+
+## UI / UX / design
+
+For visual, interaction, and design-system work, lean on global skills to the fullest: `ui-ux-pro-max`, `impeccable`, `design-taste-frontend`, `frontend-design`, `design`, `design-critique`, `accessibility-review`, `web-design-guidelines`, `web-perf`, `apple-design`, `industrial-brutalist-ui`, `minimalist-ui`, etc. Always discover what's available first; pick the skill whose trigger matches the problem, and load it before producing UI.
+
+Visual rules: off-white bg `oklch(0.99 0 0)`, thin borders, mono labels, single neutral accent. NO em-dashes in UI copy, NO AI-purple gradients, NO rainbow dashboards (tag hues snap to six low-chroma buckets via `--tag-*` CSS vars).

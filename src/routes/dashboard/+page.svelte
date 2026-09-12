@@ -309,7 +309,7 @@
 			<section class="mt-6 sm:mt-8" aria-labelledby="insights-heading">
 				<h2 id="insights-heading" class="text-sm font-medium text-fg">Insights</h2>
 				<div class="mt-3 grid gap-3 sm:gap-4 lg:grid-cols-2">
-					<VelocityChart apps={data.applications} />
+					<VelocityChart apps={data.applications} stageMoves={data.stageMoves} />
 					<StageDwellChart apps={data.applications} />
 				</div>
 			</section>
