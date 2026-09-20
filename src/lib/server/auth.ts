@@ -44,6 +44,13 @@ export type SessionUser = {
 export type AuthInstance = ReturnType<typeof buildAuth>;
 
 function buildAuth(env: Env) {
+	// `vars` in wrangler.jsonc are typed as their literal values, so an empty
+	// DEV_ORIGINS is the type `""` — and a truthiness check on `""` collapses
+	// to `never`, which would make `.split` a type error. Widen it once here;
+	// at runtime it is whatever the environment actually holds (a real dev
+	// override is a non-empty comma-separated list).
+	const devOrigins: string = env.DEV_ORIGINS;
+
 	return betterAuth({
 		appName: 'Job Tracker',
 		secret: env.BETTER_AUTH_SECRET,
@@ -61,8 +68,9 @@ function buildAuth(env: Env) {
 		// DEV_ORIGINS var (comma-separated). Never hardcode localhost here —
 		// Better Auth docs: "Do not leave the localhost origin in a trusted
 		// origins list of a production auth instance."
-		trustedOrigins: env.DEV_ORIGINS
-			? env.DEV_ORIGINS.split(',')
+		trustedOrigins: devOrigins
+			? devOrigins
+					.split(',')
 					.map((o) => o.trim())
 					.filter(Boolean)
 			: [],

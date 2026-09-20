@@ -1,109 +1,138 @@
 <script lang="ts">
+	/**
+	 * The resume library: upload PDFs to R2, see which applications each one
+	 * is attached to, open or download it, and delete it.
+	 *
+	 * Every mutation goes through /api/resumes and then `invalidateAll()`, so
+	 * the list below is always the server's truth rather than a local copy
+	 * that can drift. Deleting a resume detaches it from every application
+	 * that pointed at it — the count is shown first so nobody loses a link by
+	 * surprise.
+	 */
+
+	import { invalidateAll } from '$app/navigation';
+	import { resolve as resolvePath } from '$app/paths';
 	import Modal from './Modal.svelte';
 	import Button from './Button.svelte';
-	import { RESUME_URLS } from '$lib/constants/resumes';
-	import { formatDateShort, formatRelative } from '$lib/utils/dates';
-	import type { Application } from '$lib/types';
+	import {
+		MAX_RESUMES_PER_USER,
+		MAX_RESUME_BYTES,
+		RESUME_CONTENT_TYPE,
+		formatBytes
+	} from '$lib/constants/resumes';
+	import { formatDateShort } from '$lib/utils/dates';
+	import type { Resume } from '$lib/types';
 
 	interface Props {
-		/** All apps with a `resumeId`. Source: dashboard load returns `applications`. */
-		applications: readonly Application[];
-		/** Bindable open state — parent (dashboard) owns it; this modal
-		 * flips it false on Esc/backdrop/X via Modal's bind:open chain. */
+		/** The signed-in user's resumes, from the dashboard load. */
+		resumes: readonly Resume[];
+		/** Bindable open state — the dashboard owns it; Modal flips it false
+		 * on Esc/backdrop/X through the bind:open chain. */
 		open?: boolean;
 	}
 
-	let { applications, open = $bindable(false) }: Props = $props();
+	let { resumes, open = $bindable(false) }: Props = $props();
 
-	// Mock "library": list each app's resumeId + name. R2 upload lands
-	// in the backend round. For now we just show the inventory + a
-	// local-only file picker that records the chosen file's metadata
-	// (no upload, no persistence beyond the session).
+	let file = $state<File | null>(null);
+	let fileInput = $state<HTMLInputElement | null>(null);
+	/** One flag for upload + delete: they can't usefully run at once. */
+	let busy = $state(false);
+	let error = $state<string | null>(null);
+	let notice = $state<string | null>(null);
+	/** Two-click delete: the id awaiting confirmation, or null. */
+	let confirmingId = $state<string | null>(null);
 
-	type ResumeEntry = {
-		id: string;
-		company: string;
-		role: string;
-		filename: string;
-		previewUrl: string | null;
-		updatedAt: string;
-	};
+	const atCapacity = $derived(resumes.length >= MAX_RESUMES_PER_USER);
 
-	// Derive the resume library from the passed `applications` prop.
-	const library: ResumeEntry[] = $derived(
-		applications
-			.filter((a): a is Application & { resumeId: string } => a.resumeId !== null)
-			.map((a) => ({
-				id: a.resumeId,
-				company: a.company,
-				role: a.role,
-				filename: `${a.resumeId}.pdf`,
-				previewUrl: RESUME_URLS[a.resumeId] ?? null,
-				updatedAt: a.updatedAt
-			}))
-	);
-
-	// Staged upload: previews the chosen file via `URL.createObjectURL`
-	// but does not persist it. R2 upload lands in the backend round.
-	type PendingUpload = {
-		file: File;
-		name: string;
-		size: number;
-		previewUrl: string;
-	};
-	let pending = $state<PendingUpload | null>(null);
-	let uploadError = $state<string | null>(null);
+	function resetFileInput() {
+		if (fileInput) fileInput.value = '';
+		file = null;
+	}
 
 	function onFileChange(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0] ?? null;
-		uploadError = null;
-		if (!file) {
-			pending = null;
+		const picked = input.files?.[0] ?? null;
+		error = null;
+		notice = null;
+		if (!picked) {
+			file = null;
 			return;
 		}
-		if (file.type !== 'application/pdf') {
-			uploadError = 'Only PDF files are accepted.';
-			pending = null;
+		// Courtesy checks. The route re-checks size and sniffs the real magic
+		// bytes — this only spares the user a pointless round-trip. `type` can
+		// be empty on some platforms, in which case we let the server decide.
+		if (picked.size > MAX_RESUME_BYTES) {
+			error = `That file is ${formatBytes(picked.size)}. The limit is ${formatBytes(MAX_RESUME_BYTES)}.`;
+			resetFileInput();
 			return;
 		}
-		if (file.size > MAX_UPLOAD_BYTES) {
-			uploadError = 'Files must be under 10 MB.';
-			pending = null;
+		if (picked.type && picked.type !== RESUME_CONTENT_TYPE) {
+			error = 'Only PDF files are accepted.';
+			resetFileInput();
 			return;
 		}
-		pending = {
-			file,
-			name: file.name,
-			size: file.size,
-			previewUrl: URL.createObjectURL(file)
-		};
+		file = picked;
 	}
 
-	function clearPending() {
-		if (pending) URL.revokeObjectURL(pending.previewUrl);
-		pending = null;
+	async function upload() {
+		if (!file || busy) return;
+		busy = true;
+		error = null;
+		notice = null;
+		try {
+			const body = new FormData();
+			body.append('file', file);
+			const res = await fetch(resolvePath('/api/resumes'), { method: 'POST', body });
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				throw new Error(
+					(data as { error?: string } | null)?.error ?? `Upload failed (${res.status}).`
+				);
+			}
+			const name = (data as { resume?: { name?: string } } | null)?.resume?.name ?? 'Resume';
+			resetFileInput();
+			notice = `${name} uploaded. Attach it from any application's edit form.`;
+			await invalidateAll();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Upload failed. Please try again.';
+		} finally {
+			busy = false;
+		}
 	}
 
-	function formatSize(bytes: number): string {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	}
-	// 10 MB upload ceiling, shared by the validation copy and the input.
-	const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-	// Surfaces the same stub copy the disabled button used to silently swallow.
-	const UPLOAD_STUB_MSG = 'Upload will go to R2 once the backend round lands.';
-
-	function onUploadClick() {
-		// The button is intentionally enabled so the gesture never disappears;
-		// clicking it tells the user the upload is a preview, not silent.
-		uploadError = UPLOAD_STUB_MSG;
+	async function remove(resume: Resume) {
+		if (busy) return;
+		busy = true;
+		error = null;
+		notice = null;
+		try {
+			const res = await fetch(resolvePath(`/api/resumes/${resume.id}`), { method: 'DELETE' });
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				throw new Error(
+					(data as { error?: string } | null)?.error ?? `Delete failed (${res.status}).`
+				);
+			}
+			const detached = (data as { detached?: number } | null)?.detached ?? 0;
+			confirmingId = null;
+			notice =
+				detached > 0
+					? `${resume.name} deleted and detached from ${detached} application${
+							detached === 1 ? '' : 's'
+						}.`
+					: `${resume.name} deleted.`;
+			await invalidateAll();
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Delete failed. Please try again.';
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
-<Modal bind:open title="Resume library" subtitle="Upload and manage your resumes">
+<Modal bind:open title="Resume library" subtitle="Upload once, attach to any application">
 	<div class="space-y-5">
+		<!-- Upload -->
 		<div
 			role="region"
 			aria-labelledby="resume-upload-heading"
@@ -113,98 +142,158 @@
 				id="resume-upload-heading"
 				class="mb-2 font-mono text-[11px] tracking-widest text-muted uppercase"
 			>
-				Upload a new resume
+				Upload a resume
 			</h3>
-			<div class="space-y-3">
-				<label for="resume-file" class="block text-sm font-medium text-fg">PDF resume</label>
-				<input
-					id="resume-file"
-					type="file"
-					accept="application/pdf"
-					onchange={onFileChange}
-					class="block w-full cursor-pointer rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg file:mr-3 file:rounded-sm file:border-0 file:bg-accent file:px-3 file:py-1.5 file:font-medium file:text-accent-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-				/>
-				<p class="text-xs text-muted">Max 10 MB. Stored in R2 once the backend round lands.</p>
-				{#if uploadError}
-					<p class="text-xs text-danger" role="alert">{uploadError}</p>
-				{/if}
-				{#if pending}
-					<div
-						class="flex items-center justify-between gap-3 rounded-sm bg-surface px-3 py-2 text-xs"
-					>
-						<span class="truncate font-mono">
-							{pending.name} · {formatSize(pending.size)}
-						</span>
-						<button
-							type="button"
-							onclick={clearPending}
-							class="cursor-pointer text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-						>
-							Remove
-						</button>
-					</div>
-					<!--
-						Upload is a preview until the backend round lands. The
-						button stays enabled so the gesture never disappears;
-						clicking surfaces the same stub message inline via the
-						existing uploadError alert.
-					-->
 
-					<div class="flex justify-end gap-2 pt-1">
-						<Button
-							type="button"
-							variant="primary"
-							size="sm"
-							onclick={onUploadClick}
-							ariaLabel="Upload resume (pending backend round)"
+			{#if atCapacity}
+				<p class="text-sm text-muted">
+					You have {resumes.length} of {MAX_RESUMES_PER_USER} resumes stored. Delete one to add another.
+				</p>
+			{:else}
+				<div class="space-y-3">
+					<label for="resume-file" class="block text-sm font-medium text-fg">PDF file</label>
+					<input
+						id="resume-file"
+						bind:this={fileInput}
+						type="file"
+						accept="application/pdf,.pdf"
+						disabled={busy}
+						onchange={onFileChange}
+						aria-describedby="resume-file-hint"
+						class="block w-full cursor-pointer rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg file:mr-3 file:rounded-sm file:border-0 file:bg-accent file:px-3 file:py-1.5 file:font-medium file:text-accent-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+					/>
+					<p id="resume-file-hint" class="text-xs text-muted">
+						PDF only, up to {formatBytes(MAX_RESUME_BYTES)}. Stored privately in your Cloudflare
+						account.
+					</p>
+
+					{#if file}
+						<div
+							class="flex items-center justify-between gap-3 rounded-sm bg-surface px-3 py-2 text-xs"
 						>
-							Upload
-						</Button>
-					</div>
-				{/if}
-			</div>
+							<span class="truncate font-mono">{file.name} · {formatBytes(file.size)}</span>
+							<button
+								type="button"
+								onclick={resetFileInput}
+								disabled={busy}
+								class="cursor-pointer text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+							>
+								Remove
+							</button>
+						</div>
+						<div class="flex justify-end pt-1">
+							<!-- `busy` on Button disables it, sets aria-busy and
+								renders the spinner — better than swapping the label. -->
+							<Button
+								type="button"
+								variant="primary"
+								size="sm"
+								{busy}
+								onclick={upload}
+								ariaLabel={`Upload ${file.name}`}
+							>
+								Upload
+							</Button>
+						</div>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
+		<!-- Feedback. `status` is polite; `alert` interrupts for errors. -->
+		{#if notice}
+			<p class="text-xs text-muted" role="status">{notice}</p>
+		{/if}
+		{#if error}
+			<p class="text-xs text-danger" role="alert">{error}</p>
+		{/if}
+
+		<!-- Library -->
 		<div role="region" aria-labelledby="resume-library-heading">
 			<h3
 				id="resume-library-heading"
 				class="mb-2 font-mono text-[11px] tracking-widest text-muted uppercase"
 			>
-				Attached to applications · {library.length}
+				Your resumes · {resumes.length}
 			</h3>
-			{#if library.length === 0}
-				<p class="text-sm text-muted">No resumes attached yet.</p>
+
+			{#if resumes.length === 0}
+				<p class="text-sm text-muted">
+					No resumes yet. Upload one and it will be available to attach to any application.
+				</p>
 			{:else}
 				<ul class="divide-y divide-border">
-					{#each library as entry (entry.id)}
-						<li class="flex items-center justify-between gap-3 py-3">
-							<div class="min-w-0 flex-1">
-								<div class="truncate text-sm font-medium text-fg">{entry.filename}</div>
-								<div class="truncate text-xs text-muted">
-									{entry.company} · {entry.role} · updated {formatRelative(entry.updatedAt)}
+					{#each resumes as r (r.id)}
+						<li class="py-3">
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0 flex-1">
+									<div class="truncate text-sm font-medium text-fg">{r.name}</div>
+									<div class="truncate text-xs text-muted">
+										{formatBytes(r.sizeBytes)} · added {formatDateShort(r.createdAt)} ·
+										{r.usedBy === 0
+											? 'not attached'
+											: `attached to ${r.usedBy} application${r.usedBy === 1 ? '' : 's'}`}
+									</div>
+								</div>
+								<div class="flex shrink-0 items-center gap-2 text-xs">
+									<!-- resolve() inlined: the ESLint rule can't see through a
+										helper function. `download` uses the native attribute
+										rather than ?download=1 so the URL stays a plain path. -->
+									<a
+										href={resolvePath(`/api/resumes/${r.id}`)}
+										target="_blank"
+										rel="noreferrer"
+										class="rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									>
+										Open ↗
+									</a>
+									<a
+										href={resolvePath(`/api/resumes/${r.id}`)}
+										download={r.name}
+										class="rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									>
+										Download
+									</a>
+									{#if confirmingId === r.id}
+										<Button
+											type="button"
+											variant="danger"
+											size="sm"
+											{busy}
+											onclick={() => remove(r)}
+											ariaLabel={`Confirm deleting ${r.name}`}
+										>
+											Confirm
+										</Button>
+										<button
+											type="button"
+											onclick={() => (confirmingId = null)}
+											disabled={busy}
+											class="cursor-pointer rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+										>
+											Cancel
+										</button>
+									{:else}
+										<button
+											type="button"
+											onclick={() => (confirmingId = r.id)}
+											disabled={busy}
+											class="cursor-pointer rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+										>
+											Delete
+										</button>
+									{/if}
 								</div>
 							</div>
-							{#if entry.previewUrl}
-								<!-- Preview URLs are external (mock PDFs today, presigned
-									R2 in the backend round), so use the URL directly —
-									resolve() is only for internal SvelteKit routes. -->
-								<a
-									href={entry.previewUrl}
-									target="_blank"
-									rel="external noreferrer"
-									class="rounded-sm px-2 py-1 text-xs text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-								>
-									Open ↗
-								</a>
+							{#if confirmingId === r.id && r.usedBy > 0}
+								<p class="mt-1 text-xs text-danger" role="alert">
+									This will also detach it from {r.usedBy} application{r.usedBy === 1 ? '' : 's'}.
+									The applications stay; they just lose the file link.
+								</p>
 							{/if}
 						</li>
 					{/each}
 				</ul>
-				<p class="mt-3 text-xs text-muted">
-					Title attribute shows the most recent attach date: {formatDateShort(
-						new Date().toISOString()
-					)}.
-				</p>
 			{/if}
 		</div>
 	</div>

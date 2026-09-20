@@ -56,6 +56,10 @@ For which of these actually bind this app, and what the code does about each, se
 
 ## `wrangler.jsonc` (the project-relevant shape)
 
+A tour of the bindings that exist, not a copy of the repo's config. This app ships items **1, 2, 3,
+6 and 7** — assets, D1, R2, empty `vars`, observability. KV, Queues, Hyperdrive and the SPA
+fallback are shown for reference and are deliberately not in `wrangler.jsonc`.
+
 ```jsonc
 {
   "$schema": "node_modules/wrangler/config-schema.json",
@@ -261,7 +265,11 @@ export class JobCounter extends DurableObject<Env> {
 
 ## R2
 
-- S3-compatible, zero egress, 10 GB free.
+- S3-compatible, zero egress. Free tier ([pricing](https://developers.cloudflare.com/r2/pricing/),
+  updated 2026-08-07): **10 GB-month storage, 1 million Class A operations, 10 million Class B
+  operations** per month. Class A mutates state (write, list, delete), Class B reads. Egress is
+  free on every storage class. The free tier applies to Standard storage only, not Infrequent
+  Access.
 - Use `R2.put(key, body, { httpMetadata, customMetadata })`, `R2.get(key)`, `R2.delete(key)`, `R2.list({ prefix })`.
 - Public bucket: bind separately, exposes `R2_BUCKET.get(key).then(r => r.body)`. Don't do this for user data — use presigned URLs (`R2.createPresignedUrl`).
 - CORS: set via dashboard or via S3 API on the bucket. Worker upload pattern: client requests a presigned URL from your Worker, uploads directly to R2.

@@ -19,7 +19,7 @@ You do these **once, by hand**. Everything after that is a push.
 
 ```mermaid
 flowchart TD
-    A["1 · wrangler d1 create job-tracker"] --> B["2 · paste database_id into wrangler.jsonc"]
+    A["1 · create D1 + R2 (already done)"] --> B["2 · database_id + bucket in wrangler.jsonc"]
     B --> C["3 · git commit + push"]
     C --> D["4 · dashboard: connect GitHub repo"]
     D --> E["5 · dashboard: set build + deploy commands"]
@@ -27,18 +27,32 @@ flowchart TD
     F --> G["7 · push again → live"]
 ```
 
-### 1 · Create the D1 database
+### 1 · Create the D1 database and the R2 bucket
+
+Both exist already and are committed in `wrangler.jsonc`. Recreate them only if you start over:
 
 ```bash
-wrangler d1 create job-tracker
+bunx wrangler d1 create job-tracker
+bunx wrangler r2 bucket create job-tracker-resumes
 ```
 
-It prints a `database_id`. Paste it into `wrangler.jsonc` → `d1_databases[0].database_id` and
-commit. The current value in the file is a placeholder that does not exist — every `--remote`
-command fails with code `7404` until you replace it.
+| Resource | Name | Referenced by |
+|---|---|---|
+| D1 database | `job-tracker` | `wrangler.jsonc` → `d1_databases[0].database_id` |
+| R2 bucket | `job-tracker-resumes` | `wrangler.jsonc` → `r2_buckets[0].bucket_name`, bound as `RESUMES` |
 
-> The `database_id` is an identifier, not a credential. Committing it in a public repo is fine;
-> it only works together with an API token on your account.
+Both were created with `wrangler` on this account, so D1 and R2 are already enabled there and no
+dashboard sign-up step is left. A bucket is bound by **name**, not by id — so unlike D1 there is
+nothing to paste back into `wrangler.jsonc` after creating one.
+
+`wrangler d1 create` prints a `database_id`; paste it into `wrangler.jsonc` and commit. Every
+`--remote` command fails with code `7404` until the id is real.
+
+The D1 **name** must stay `job-tracker` — `db:migrate:remote` looks the database up by name, not
+by id. R2 holds the resume PDFs; D1 holds only their metadata (see [data-model.md](data-model.md)).
+
+> An id or a bucket name is an identifier, not a credential. Committing them to a public repo is
+> fine; they only work together with an API token on your account.
 
 ### 2 · Add the secret
 
@@ -163,6 +177,8 @@ SQL will not be applied until it lands on `main`.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `code: 7404` on any `--remote` command | D1 database does not exist | `wrangler d1 create job-tracker`, paste the id |
+| Resume upload returns 500 | `RESUMES` binding missing or the bucket name is wrong | `wrangler r2 bucket create job-tracker-resumes`, check `r2_buckets` |
+| Upload rejected with 415 | The file is not really a PDF | Only files whose first bytes are `%PDF-` are accepted, whatever their name says |
 | Build fails immediately with a name error | Dashboard Worker name ≠ `name` in `wrangler.jsonc` | Rename one to match (`job-tracker`) |
 | Deploy succeeds but every page 500s | `BETTER_AUTH_SECRET` missing | Add it under **Variables & Secrets** |
 | Auth works locally, fails in prod | `BETTER_AUTH_URL` pinned to localhost | Unset it; it is now inferred per request |

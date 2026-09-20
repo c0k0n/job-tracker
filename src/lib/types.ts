@@ -94,6 +94,27 @@ export interface Application {
 }
 
 /**
+ * A resume PDF the user uploaded to R2. The object lives under
+ * `${userId}/${id}.pdf`; this row is the metadata + ownership record that
+ * every read is scoped by.
+ */
+export interface Resume {
+	id: string;
+	userId: string;
+	/** Original filename — display only, never used to build a path. */
+	name: string;
+	/** Object key in the RESUMES bucket. Never sent to the client. */
+	r2Key: string;
+	sizeBytes: number;
+	/** Always `application/pdf`: enforced server-side by magic bytes. */
+	contentType: string;
+	createdAt: string; // ISO date
+	/** How many of this user's applications currently point at it. The
+	 * library uses this to warn before a delete detaches them. */
+	usedBy: number;
+}
+
+/**
  * Aggregates for the KPI strip. Computed server-side from the
  * application's row set, not derived client-side (so the dashboard can
  * show counts without re-deriving on every render).

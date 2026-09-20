@@ -5,16 +5,17 @@
 		Application,
 		ApplicationStage,
 		ApplicationStatus,
+		Resume,
 		WorkArrangement
 	} from '$lib/types';
 	import { STAGES, STATUSES, ARRANGEMENTS } from '$lib/constants/stages';
+	import { formatBytes } from '$lib/constants/resumes';
 	import {
 		defaultSalaryFormValues,
 		type SalaryFormValues,
 		type SalaryShapeValue
 	} from '$lib/utils/money';
 	import { toDateInputValue } from '$lib/utils/dates';
-	import { RESUME_URLS } from '$lib/constants/resumes';
 	import Button from './Button.svelte';
 	import SalaryInput from './SalaryInput.svelte';
 
@@ -23,6 +24,9 @@
 		application?: Application;
 		/** When true, the form creates a new application (POSTs to ?/create). */
 		create?: boolean;
+		/** The signed-in user's uploaded resumes — the attach options. Comes
+		 * from the dashboard load, so it is already scoped to this account. */
+		resumes?: readonly Resume[];
 		/** Result of the create/edit form action from the server, threaded
 		 * via `page.form`. Carries echoed values + per-field errors when a
 		 * validation failure keeps the modal open. */
@@ -37,7 +41,7 @@
 		onsuccess?: () => void;
 	}
 
-	let { application, create = false, result, onsuccess }: Props = $props();
+	let { application, create = false, resumes = [], result, onsuccess }: Props = $props();
 
 	// In-flight flag: disables the submit button while the action runs so
 	// a slow response can't turn into duplicate submissions.
@@ -77,6 +81,7 @@
 					stage?: string;
 					status?: string;
 					workArrangement?: string;
+					resume?: string;
 					salary?: string;
 			  }
 			| undefined;
@@ -321,18 +326,32 @@
 			class="{inputClass} placeholder:text-muted"></textarea>
 	</div>
 
-	<!-- Resume (mock library until R2 upload lands) -->
+	<!-- Resume: attach the version that was actually sent, so the record
+		can answer "which CV did I use for this one?" months later. -->
 	<div class="space-y-1.5">
 		<label for="app-resume" class={labelClass}>Resume</label>
-		<select id="app-resume" name="resumeId" bind:value={resumeId} class={inputClass}>
+		<select
+			id="app-resume"
+			name="resumeId"
+			bind:value={resumeId}
+			aria-describedby="app-resume-hint"
+			class={inputClass}
+		>
 			<option value="">None</option>
-			{#each Object.entries(RESUME_URLS) as [id] (id)}
-				<option value={id}>{id}</option>
+			{#each resumes as r (r.id)}
+				<option value={r.id}>{r.name} · {formatBytes(r.sizeBytes)}</option>
 			{/each}
 		</select>
-		<p class="text-xs text-muted">
-			Upload resumes with the Resumes button on the dashboard; pick one here to attach it.
+		<p id="app-resume-hint" class="text-xs text-muted">
+			{#if resumes.length === 0}
+				No resumes yet — upload one with the Resumes button on the dashboard.
+			{:else}
+				Pick the version you sent. It stays linked to this application.
+			{/if}
 		</p>
+		{#if errors?.resume}
+			<p class="text-xs text-danger" role="alert">{errors.resume}</p>
+		{/if}
 	</div>
 
 	<!-- Compensation (Modular SalaryInput component) -->

@@ -3,6 +3,18 @@
 import type { AuthInstance } from '$lib/server/auth';
 
 declare global {
+	/**
+	 * `BETTER_AUTH_URL` is deliberately absent from `wrangler.jsonc`: when it
+	 * is unset, Better Auth derives the base URL from each request's origin,
+	 * so one build works locally and in production. It stays *settable* as a
+	 * runtime variable for anyone who wants to pin auth to one origin, which
+	 * means the generated `Env` (built from wrangler.jsonc alone) never
+	 * mentions it. Declared here so the optional read in auth.ts type-checks.
+	 */
+	interface Env {
+		BETTER_AUTH_URL?: string;
+	}
+
 	namespace App {
 		interface Platform {
 			env: Env;

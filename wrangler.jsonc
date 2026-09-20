@@ -17,16 +17,26 @@
 		{
 			"binding": "DB",
 			"database_name": "job-tracker",
-			// This id does not exist yet — no D1 database has been created on
-			// the account. Run `wrangler d1 create job-tracker` and paste the
-			// id it prints, or every --remote command fails with code 7404.
-			// See docs/deployment.md step 3.
-			"database_id": "74664605-5d21-4a7a-a348-c20eab7edd1c",
+			// Real database, created 2026-09-20 (region APAC). An id is an
+			// identifier, not a credential — it only works together with an
+			// API token on this account, so committing it is fine.
+			"database_id": "e9517ea7-faec-4f1f-9ce7-18f81fff4cdb",
 			// Drizzle owns migrations (drizzle-kit generate emits flat
 			// migrations/NNNN_name.sql files in 0.4x; the nested per-folder
 			// layout is Drizzle 1.0 RC's new output).
 			"migrations_dir": "db/migrations",
 			"migrations_pattern": "db/migrations/*.sql"
+		}
+	],
+	// Resume PDFs. Objects are namespaced `${userId}/${resumeId}.pdf` and
+	// every read is scoped by userId in the data layer, so the bucket is
+	// never publicly exposed — files are served only through
+	// /api/resumes/[id]. Free tier: 10 GB storage, 1M Class A + 10M Class B
+	// ops/month, zero egress. See docs/research/cloudflare.md.
+	"r2_buckets": [
+		{
+			"binding": "RESUMES",
+			"bucket_name": "job-tracker-resumes"
 		}
 	],
 	// Non-secret config. BETTER_AUTH_SECRET is a `wrangler secret put` value,

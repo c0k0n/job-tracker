@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import { getApplicationsForUser } from '$lib/server/applications-data';
+import { listResumes } from '$lib/server/resumes-data';
 import { getDb } from '$lib/server/db';
 import { CURRENCY_BY_CODE } from '$lib/constants/currencies';
 
@@ -21,7 +22,13 @@ export const GET: RequestHandler = async ({ locals, platform }) => {
 		});
 	}
 	const db = getDb(platform!.env.DB);
-	const apps = await getApplicationsForUser(db, locals.user.id);
+	const [apps, resumes] = await Promise.all([
+		getApplicationsForUser(db, locals.user.id),
+		listResumes(db, locals.user.id)
+	]);
+	// The CSV names the resume rather than dumping its id, so the export
+	// answers "which CV did I send here" without a second lookup.
+	const resumeName = new Map(resumes.map((r) => [r.id, r.name]));
 
 	const COLUMNS = [
 		'company',
@@ -37,6 +44,7 @@ export const GET: RequestHandler = async ({ locals, platform }) => {
 		'postingUrl',
 		'postingDescription',
 		'notes',
+		'resume',
 		'appliedAt',
 		'stageChangedAt',
 		'nextActionAt',
@@ -81,6 +89,7 @@ export const GET: RequestHandler = async ({ locals, platform }) => {
 			a.postingUrl ?? '',
 			a.postingDescription ?? '',
 			a.notes ?? '',
+			a.resumeId ? (resumeName.get(a.resumeId) ?? '') : '',
 			a.appliedAt ?? '',
 			a.stageChangedAt,
 			a.nextActionAt ?? '',

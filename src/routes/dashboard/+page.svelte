@@ -446,6 +446,7 @@
 					rows={visibleRows}
 					trashView={data.trashView}
 					{sort}
+					resumes={data.resumes}
 					{onRowClick}
 					onSortChange={(next) => (sort = next)}
 				/>
@@ -470,13 +471,23 @@
 	invocations). Detail opens via goto so the server load fetches its
 	bundle; resume/new are pure client state.
 -->
-<ApplicationDetailModal detail={data.activeDetail} form={pageStore.form} bind:open={detailOpen} />
-<ResumeLibraryModal applications={data.applications} bind:open={resumeOpen} />
+<ApplicationDetailModal
+	detail={data.activeDetail}
+	form={pageStore.form}
+	resumes={data.resumes}
+	bind:open={detailOpen}
+/>
+<ResumeLibraryModal resumes={data.resumes} bind:open={resumeOpen} />
 <Modal
 	bind:open={newAppOpen}
 	title="Add application"
 	subtitle="Track a new job application."
 	size="lg"
 >
-	<ApplicationForm create result={newAppForm} onsuccess={() => (newAppOpen = false)} />
+	<ApplicationForm
+		create
+		resumes={data.resumes}
+		result={newAppForm}
+		onsuccess={() => (newAppOpen = false)}
+	/>
 </Modal>

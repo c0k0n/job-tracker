@@ -29,9 +29,12 @@ import { getAuth } from '$lib/server/auth';
  * The CSP is deliberately not strict: SvelteKit emits inline `<script>`
  * and `<style>` chunks (and the dashboard sets inline `style="width: …"`
  * attributes for its chart bars), so `'unsafe-inline'` is required in both
- * directives or the app stops rendering. `frame-src` stays open because the
- * detail modal embeds third-party resume PDFs in an iframe. Everything else
- * is locked down. See docs/security.md.
+ * directives or the app stops rendering. `frame-src 'self'` covers the detail
+ * modal's resume preview, which is our own /api/resumes/[id] response rather
+ * than a third-party document. Everything else is locked down. Note that
+ * `X-Frame-Options: DENY` would block that same iframe, so the resume route
+ * sets SAMEORIGIN itself and this hook leaves an existing header alone.
+ * See docs/security.md.
  */
 const SECURITY_HEADERS: Record<string, string> = {
 	'X-Content-Type-Options': 'nosniff',
@@ -46,8 +49,11 @@ const SECURITY_HEADERS: Record<string, string> = {
 		"img-src 'self' data: blob:",
 		"font-src 'self' data:",
 		"connect-src 'self'",
-		// Resume previews are third-party PDF documents in an iframe.
-		'frame-src https:',
+		// Resume previews are same-origin PDFs streamed from R2 via
+		// /api/resumes/[id], so 'self' is both correct and tighter than the
+		// old `frame-src https:` (which had to allow any host, and would not
+		// even have matched plain-http local dev).
+		"frame-src 'self'",
 		"object-src 'none'",
 		"base-uri 'self'",
 		"form-action 'self'",

@@ -1,7 +1,8 @@
 # Components
 
-Thirteen components in `src/lib/components/`. All of them are presentational: none fetch, none
-read `page` for mutable state, none touch `$lib/server`.
+Thirteen components in `src/lib/components/`. All of them are presentational: none read `page` for
+mutable state, none touch `$lib/server`. One of them fetches — `ResumeLibraryModal`, and the reason
+it is allowed to is in [the one exception](#the-one-exception-resumelibrarymodal-fetches).
 
 ```mermaid
 flowchart TD
@@ -32,12 +33,12 @@ flowchart TD
 | `EmptyState.svelte` | `title` | `description`, `action` snippet, `icon` snippet | Used for both "no results" and "no applications yet" |
 | `StatCard.svelte` | `label`, `value` | — | Headline KPI tile |
 | `FilterBar.svelte` | `filters` (bindable), `sort` (bindable), `hasApplications`, `tagFacets` | — | Hides itself when there is nothing to filter |
-| `ApplicationsTable.svelte` | `rows`, `sort` | `trashView`, `onRowClick`, `onSort` | Rows arrive already filtered and sorted. In trash view, row actions swap to Restore / Delete permanently |
+| `ApplicationsTable.svelte` | `rows`, `sort` | `trashView`, `onRowClick`, `onSort`, `resumes` | Rows arrive already filtered and sorted. `resumes` is only used to turn `resumeId` into a filename for the attachment icon's label. In trash view, row actions swap to Restore / Delete permanently |
 | `StatusBadge.svelte` | stage + status | — | Renders the `-100`/`-700` pair for the value |
-| `ApplicationForm.svelte` | — | `application` (edit mode), `create`, `result` | One form for create and edit; `result` carries `page.form` so server-side field errors surface above the fields |
+| `ApplicationForm.svelte` | — | `application` (edit mode), `create`, `result`, `resumes` | One form for create and edit; `result` carries `page.form` so server-side field errors surface above the fields. The resume `<select>` lists `resumes` with size, and shows `errors.resume` |
 | `SalaryInput.svelte` | `shape`, `currency`, `exact`, `min`, `max`, `inputClass` | `error` | All money values bindable; shape switches between exact / range / none / unspecified |
-| `ApplicationDetailModal.svelte` | `detail` (`ApplicationDetail \| null`) | `open` (bindable), `form` | Renders timeline, interviews, contacts |
-| `ResumeLibraryModal.svelte` | `applications` | `open` (bindable) | Inventory of `resumeId` values; upload is not implemented |
+| `ApplicationDetailModal.svelte` | `detail` (`ApplicationDetail \| null`) | `open` (bindable), `form`, `resumes` | Renders timeline, interviews, contacts, and — when `detail.resumeId` resolves to a row in `resumes` — the filename, a download link, and an inline preview |
+| `ResumeLibraryModal.svelte` | `resumes` | `open` (bindable) | Upload (PDF, 10 MB, 20 max), list with size / date / `usedBy`, open, download, two-click delete |
 | `ConversionFunnel.svelte` | `apps` | — | Current-state funnel |
 | `VelocityChart.svelte` | — | — | Applications per week over a 90-day window |
 | `StageDwellChart.svelte` | `apps` | — | Median days in each live stage |
@@ -68,6 +69,24 @@ flowchart TD
 When validation fails, the action echoes the submitted values back. The form re-renders with them
 so nothing the user typed is lost.
 
+## The one exception: `ResumeLibraryModal` fetches
+
+Uploading a file cannot be a form action — a `<form method="POST">` would send the whole PDF
+through the SSR round-trip and re-render the page for what is really a background write. So this
+one component calls `fetch` directly.
+
+```mermaid
+flowchart LR
+    A["fetch POST /api/resumes"] --> B["invalidateAll()"]
+    B --> C["load() re-runs server-side"]
+    C --> D["resumes prop is server truth again"]
+```
+
+The discipline that keeps it honest: **every mutation ends in `invalidateAll()`**. The component
+never optimistically appends to its own list, so the rows you see after an upload are the ones the
+server returned, not a local guess. Errors are surfaced inline with `role="alert"`; success uses
+`role="status"` so it is announced politely rather than interrupting.
+
 ## Accessibility notes that are load-bearing
 
 | Component | What it does |
@@ -76,6 +95,7 @@ so nothing the user typed is lost.
 | `Button.svelte` | Real `<button>`; `busy` sets `aria-busy` and keeps the element focusable |
 | `ApplicationsTable.svelte` | Real `<table>` with `<th scope="col">`; sortable headers are buttons with `aria-sort` |
 | `EmptyState.svelte` | Heading, not a styled `<div>` |
+| `ResumeLibraryModal.svelte` | Two-click delete, and the confirm step names how many applications will be detached before you commit. `role="status"` for success, `role="alert"` for failure |
 | Charts | Bar widths are visual; the same numbers are present as text |
 
 There is no custom focus-ring reset anywhere. If you add one, you have broken keyboard navigation.

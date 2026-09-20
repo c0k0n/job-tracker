@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { ApplicationDetail } from '$lib/types';
+	import { resolve as resolvePath } from '$app/paths';
+	import type { ApplicationDetail, Resume } from '$lib/types';
 	import Modal from './Modal.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import ApplicationForm from './ApplicationForm.svelte';
@@ -8,7 +9,7 @@
 	import { formatDateShort, formatRelative, formatDurationInStage } from '$lib/utils/dates';
 	import { formatSalary } from '$lib/utils/money';
 	import { STAGES, STATUSES } from '$lib/constants/stages';
-	import { RESUME_URLS } from '$lib/constants/resumes';
+	import { formatBytes } from '$lib/constants/resumes';
 
 	interface Props {
 		/** Resolved detail bundle for the application currently in the modal.
@@ -25,9 +26,12 @@
 			values?: Record<string, unknown>;
 			errors?: Record<string, string>;
 		} | null;
+		/** The user's uploaded resumes, so an attached id can be resolved to
+		 * a filename. Already scoped to this account by the dashboard load. */
+		resumes?: readonly Resume[];
 	}
 
-	let { detail, open = $bindable(false), form }: Props = $props();
+	let { detail, open = $bindable(false), form, resumes = [] }: Props = $props();
 
 	type Tab = 'overview' | 'interviews' | 'contacts' | 'activity';
 	let activeTab = $state<Tab>('overview');
@@ -72,10 +76,18 @@
 		confirmPurgeOpen = false;
 	}
 
-	// Resume viewer is gated on having a resumeId. Round C shows an
-	// inline iframe pointing at a stub URL; R2 upload lands in the
-	// backend round.
-	const resumeUrl = $derived(app?.resumeId ? (RESUME_URLS[app.resumeId] ?? null) : null);
+	// The attached resume, resolved from the user's library. Null when the
+	// application has none, or when the file was deleted — deleting a resume
+	// detaches every application that pointed at it, so this stays honest.
+	//
+	// Both URLs hit the same-origin route that re-checks ownership and
+	// streams the PDF out of R2; `?download=1` makes it an attachment.
+	const attached = $derived.by(() => {
+		if (!app?.resumeId) return null;
+		const found = resumes.find((r) => r.id === app.resumeId);
+		if (!found) return null;
+		return { resume: found, url: resolvePath(`/api/resumes/${found.id}`) };
+	});
 
 	const stageMeta = $derived(app ? STAGES.find((s) => s.value === app.stage) : null);
 	const statusMeta = $derived(app ? STATUSES.find((s) => s.value === app.status) : null);
@@ -254,7 +266,22 @@
 						<div>
 							<div class="font-mono text-[10px] tracking-widest text-muted uppercase">Resume</div>
 							<div class="mt-1 text-sm text-fg">
-								{app.resumeId ?? 'Not attached'}
+								{#if attached}
+									<!-- Native `download` attribute rather than ?download=1, so the
+										href stays a plain resolve()d path for the lint rule. -->
+									<a
+										href={attached.url}
+										download={attached.resume.name}
+										class="underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									>
+										{attached.resume.name}
+									</a>
+									<span class="text-xs text-muted">
+										· {formatBytes(attached.resume.sizeBytes)}
+									</span>
+								{:else}
+									<span class="text-muted">Not attached</span>
+								{/if}
 							</div>
 						</div>
 					</div>
@@ -274,22 +301,30 @@
 						</div>
 					{/if}
 
-					{#if resumeUrl}
+					{#if attached}
 						<div>
-							<div class="mb-2 font-mono text-[10px] tracking-widest text-muted uppercase">
-								Resume preview
+							<div class="mb-2 flex items-baseline justify-between gap-2">
+								<div class="font-mono text-[10px] tracking-widest text-muted uppercase">
+									Resume sent
+								</div>
+								<a
+									href={resolvePath(`/api/resumes/${attached.resume.id}`)}
+									target="_blank"
+									rel="noreferrer"
+									class="text-xs text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+								>
+									Open in a new tab ↗
+								</a>
 							</div>
 							<iframe
-								title={`Resume preview for ${app.company}`}
-								src={resumeUrl}
-								sandbox="allow-same-origin"
-								referrerpolicy="no-referrer"
+								title={`Resume ${attached.resume.name}, sent to ${app.company}`}
+								src={attached.url}
 								loading="lazy"
 								class="h-64 w-full rounded-md border border-border bg-surface-2"
 							></iframe>
 							<p class="mt-1 text-xs text-muted">
-								Inline preview via iframe. Browser security may block some PDFs; the download link
-								(backend round) provides a fallback.
+								This is the exact file you attached. Some browsers will not draw a PDF inside an
+								iframe — the link above always works.
 							</p>
 						</div>
 					{/if}
@@ -611,6 +646,7 @@
 				</h3>
 				<ApplicationForm
 					{application}
+					{resumes}
 					result={form?.operation === 'edit' && form.errors ? form : undefined}
 					onsuccess={() => (open = false)}
 				/>

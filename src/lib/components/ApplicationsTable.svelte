@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { Application, ApplicationSort, SortKey } from '$lib/types';
+	import type { Application, ApplicationSort, Resume, SortKey } from '$lib/types';
 	import StatusBadge from './StatusBadge.svelte';
 	import Button from './Button.svelte';
 	import { formatSalary } from '$lib/utils/money';
@@ -24,9 +24,15 @@
 		 * makes that direction of data flow obvious.
 		 */
 		onSortChange?: (next: ApplicationSort) => void;
+		/** The user's resumes, so the attachment icon can name the file
+		 * instead of only saying "a resume is attached". */
+		resumes?: readonly Resume[];
 	}
 
-	let { rows, trashView = false, sort, onRowClick, onSortChange }: Props = $props();
+	let { rows, trashView = false, sort, onRowClick, onSortChange, resumes = [] }: Props = $props();
+
+	/** id → filename, for the attachment tooltip. */
+	const resumeNames = $derived(new Map(resumes.map((r) => [r.id, r.name])));
 
 	// Two-step confirm for permanent deletion: the first click arms the
 	// row, a second submit performs the purge. State is per-table so only
@@ -203,9 +209,10 @@
 									{app.company}
 								</button>
 								{#if app.resumeId}
+									{@const attached = resumeNames.get(app.resumeId) ?? 'a deleted resume'}
 									<span
-										aria-label="Resume attached"
-										title="Resume attached"
+										aria-label={`Resume attached: ${attached}`}
+										title={`Resume: ${attached}`}
 										class="inline-flex size-4 items-center justify-center rounded-sm bg-surface-2 text-muted"
 									>
 										<svg

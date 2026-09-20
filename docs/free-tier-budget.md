@@ -18,10 +18,14 @@ flowchart TD
     F["D1 free tier"] --> G["50 queries / invocation"]
     F --> H["500 MB database"]
     F --> I["5 M rows read / day"]
+    N["R2 free tier"] --> O["10 GB storage"]
+    N --> P["1 M Class A / month<br/>10 M Class B / month"]
+    N --> Q["zero egress"]
     B -->|"BINDS"| J["batched dashboard aggregate"]
     G -->|"BINDS"| J
     C -->|"headroom 1000x"| K["shallow routing keeps<br/>filter state off the wire"]
     H -->|"headroom large"| L["hard deletes, no row history"]
+    O -->|"headroom large"| R["10 MB x 20 resumes per user<br/>= 200 MB max per user"]
     E & D --> M["no pressure"]
 ```
 
@@ -37,6 +41,10 @@ orders of magnitude of headroom for a single-user application.
 | Database size | 500 MB | ~1 MB | Large headroom |
 | Script size | 64 MiB | well under | No pressure |
 | Subrequests / request | 50 | 0 | No pressure |
+| R2 storage | 10 GB | ≤ 200 MB per user | Large headroom |
+| R2 Class A ops (writes, lists) | 1 M / month | tens | Large headroom |
+| R2 Class B ops (reads) | 10 M / month | hundreds | Large headroom |
+| R2 egress | free | every byte a user downloads | **Never a cost — this is why the bucket holds files** |
 
 ## What the code does about it
 
@@ -60,6 +68,9 @@ flowchart LR
 | `goto` only for real navigations | Invocations are spent where the server actually has work to do |
 | Hard deletes, no versioned row history | Database stays flat instead of growing quadratically |
 | No polling, no websockets, no background jobs | Request count stays proportional to actual use |
+| Resume bytes in R2, metadata in D1 | 200 MB ceiling per user against a 10 GB bucket, and egress is free |
+| Resume PDFs proxied by the Worker, not a public bucket | No presigned URL to leak; a read is one Class B op, which is 10 M/month |
+| Upload rejected on `content-length` before the body is read | A 500 MB POST never reaches R2 or the CPU budget |
 
 ## What would break it, and what to do instead
 
@@ -77,7 +88,7 @@ flowchart TD
 | If you want to add | The cost | Do this instead |
 |---|---|---|
 | Full-text search | A scan per request | D1 FTS5 with an index; not `LIKE '%…%'` |
-| Resume file storage | R2 is a paid-adjacent surface | Keep metadata only until there is a real need |
+| Unlimited resume storage | 10 GB is the free ceiling | Keep the 10 MB × 20 per-user cap; it is enforced in code, not policy |
 | Email digests | Needs Queues or a cron | `ctx.waitUntil` for a single call, nothing recurring |
 | Real-time collaboration | Durable Objects | Not on the free tier |
 | Semantic "more like this" | Workers AI + Vectorize | Feasible, but only past ~50k rows |

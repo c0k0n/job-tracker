@@ -24,6 +24,7 @@ import type {
 	ApplicationStatus,
 	Contact,
 	Interview,
+	Resume,
 	Salary,
 	WorkArrangement
 } from '$lib/types';
@@ -130,6 +131,36 @@ export const rateLimit = sqliteTable('rate_limit', {
 // ---------------------------------------------------------------------------
 // App tables
 // ---------------------------------------------------------------------------
+
+/**
+ * Uploaded resume PDFs. The file body lives in the R2 `RESUMES` bucket under
+ * `${userId}/${id}.pdf`; this table holds only metadata + ownership, so every
+ * read can be scoped by userId. Deleting a user cascades their resume rows —
+ * the R2 objects are swept by the same caller.
+ *
+ * Deliberately no FK on `application.resume_id`: in SQLite that would force
+ * drizzle-kit to rebuild the `application` table (drop + recreate + copy), and
+ * the detach behaviour we actually want is explicit in `deleteResume()`.
+ */
+export const resume = sqliteTable(
+	'resume',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		/** Original filename — display only, never used to build a path. */
+		name: text('name').notNull(),
+		/** Object key inside the RESUMES bucket. */
+		r2Key: text('r2_key').notNull(),
+		sizeBytes: integer('size_bytes').notNull(),
+		contentType: text('content_type').notNull(),
+		createdAt: integer('created_at', { mode: 'timestamp' })
+			.notNull()
+			.default(sql`(unixepoch())`)
+	},
+	(t) => [index('resume_user_idx').on(t.userId)]
+);
 
 /**
  * Applications. Salary is stored as a JSON text blob (minor units + shape)
@@ -294,7 +325,12 @@ export const userRelations = relations(user, ({ many }) => ({
 	// Better Auth core: account + session rows hang off the user.
 	accounts: many(account),
 	sessions: many(session),
-	applications: many(application)
+	applications: many(application),
+	resumes: many(resume)
+}));
+
+export const resumeRelations = relations(resume, ({ one }) => ({
+	user: one(user, { fields: [resume.userId], references: [user.id] })
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -339,6 +375,7 @@ export const activityEventRelations = relations(activityEvent, ({ one }) => ({
 // ---------------------------------------------------------------------------
 
 type ApplicationRow = typeof application.$inferSelect;
+type ResumeRow = typeof resume.$inferSelect;
 type InterviewRow = typeof interview.$inferSelect;
 type ContactRow = typeof contact.$inferSelect;
 type ActivityRow = typeof activityEvent.$inferSelect;
@@ -372,6 +409,24 @@ export function rowToApplication(r: ApplicationRow): Application {
 		updatedAt: tsReq(r.updatedAt),
 		tags: r.tags ?? [],
 		deletedAt: ts(r.deletedAt)
+	};
+}
+
+/**
+ * `usedBy` is not a column — it is the count of this user's applications
+ * pointing at the row, supplied by the data layer's aggregate so the library
+ * can warn before a delete detaches them.
+ */
+export function rowToResume(r: ResumeRow, usedBy: number): Resume {
+	return {
+		id: r.id,
+		userId: r.userId,
+		name: r.name,
+		r2Key: r.r2Key,
+		sizeBytes: r.sizeBytes,
+		contentType: r.contentType,
+		createdAt: tsReq(r.createdAt),
+		usedBy
 	};
 }
 

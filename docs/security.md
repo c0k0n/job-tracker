@@ -12,7 +12,7 @@ header the route has not already set, so a route can always override.
 |---|---|---|
 | `Content-Security-Policy` | `default-src 'self'` … | Script and asset injection |
 | `X-Content-Type-Options` | `nosniff` | MIME sniffing |
-| `X-Frame-Options` | `DENY` | Clickjacking |
+| `X-Frame-Options` | `DENY` (resume route sets `SAMEORIGIN`) | Clickjacking |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | URL leakage to third parties |
 | `Cross-Origin-Opener-Policy` | `same-origin` | Cross-window tampering |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), interest-cohort=()` | Unused capabilities, FLoC |
@@ -24,9 +24,14 @@ over:
 flowchart LR
     A["SvelteKit emits inline<br/><script> and <style>"] --> B["'unsafe-inline' required<br/>in script-src and style-src"]
     C["chart bars use inline<br/>style='width: …'"] --> B
-    D["detail modal embeds<br/>third-party resume PDFs"] --> E["frame-src https:"]
+    D["detail modal embeds a<br/>same-origin resume PDF"] --> E["frame-src 'self'"]
     B --> F["everything else locked down"]
 ```
+
+Resume PDFs are served by this app, not by a third party, so `frame-src` narrowed from `https:` to
+`'self'`. The global `X-Frame-Options: DENY` would break that same-origin iframe, so
+`GET /api/resumes/[id]` sets `SAMEORIGIN` itself — `hooks.server.ts` only writes headers the route
+has not already set, which is why the override works without a special case.
 
 Tightening this means moving to nonce- or hash-based CSP, which needs SvelteKit's
 `csp.directives` config rather than a header in `hooks.server.ts`. Worth doing; not free.
@@ -43,12 +48,16 @@ flowchart TD
     I["admin routes"] --> J["re-check role in their own load"]
 ```
 
-1. **Row isolation.** `applications-data.ts` has no function that omits a `userId` predicate.
+1. **Row isolation.** `applications-data.ts` and `resumes-data.ts` have no function that omits a
+   `userId` predicate.
 2. **Server-owned fields.** `disabled` is `input: false`, so a crafted POST cannot set it.
 3. **One session resolution.** Routes read `locals.user` and do not re-verify; `hooks.server.ts`
    is the only place that vets it.
 4. **Authorisation is checked at the boundary that needs it.** `locals` is a convenience, not a
    gate — `/admin/approvals` re-checks `role` in its own load.
+5. **A foreign id is a 404, not a 403.** `getResumeForUser()` misses rather than denies, so a
+   probing request cannot confirm that another user's resume exists. The bucket has no public URL
+   and no presigned URL is ever minted, so there is no path that skips this check.
 
 ## Input handling
 
@@ -57,6 +66,10 @@ flowchart TD
 | Password | Length 8-128, hashed by Better Auth; never logged |
 | Sign-in identifier | Length 3-254; sign-up requires a real `@` email |
 | Redirect targets | `safeNextParam` rejects `//` and `/\` — both are protocol-relative in a browser |
+| Uploaded file type | The client's `Content-Type` is attacker-controlled, so the first five bytes must be `%PDF-`. The filename is display-only and never becomes a path |
+| Uploaded file size | `content-length` is checked before the body is read (413); a 10 MB cap re-checks the real bytes |
+| Resume id from a form | `isResumeOwned()` on `create` and `edit` — a `resumeId` is free text, so it is checked like any other id |
+| Resume object key | Always `${userId}/${id}.pdf`, both server-generated. No user string reaches the key |
 | CSV export | Cells starting with `=`, `+`, `-`, `@` are neutralised against formula injection |
 | Salary | Parsed once in `parseSalaryFromForm`; stored as integer minor units, never a float |
 | Auth origin | `DEV_ORIGINS` must be empty in production; `baseURL` is the only trusted origin |
@@ -89,8 +102,10 @@ Honest list. None of these is a live vulnerability at current scale; all of them
 | No CSRF token beyond SvelteKit's built-in origin check | Form actions are same-origin by default | Adding a non-form mutation path |
 | No email verification | No mail sender configured | Turning on verification or password reset |
 | No audit log of admin approvals | One admin, low volume | Multiple admins |
-| Resume PDFs framed from third parties | `frame-src https:` is scoped | Storing resumes locally |
+| Resume PDFs are stored, so a stolen session reads them | Same as any other row: scoped by `userId`, proxied, `no-store` | Wanting per-file share links — needs presigned URLs and a real expiry policy |
 | No per-IP blocking beyond rate limits | Rate limiting covers brute force | Sustained targeted attacks |
+| Uploaded PDFs are not scanned or sanitised | They are served `no-store` with `nosniff` and rendered in the viewer's own sandbox, and only the uploader can ever fetch one | Letting resumes be shared between users |
+| Resume objects can briefly outlive a failed insert | The route deletes the object if the D1 write throws; only a crash mid-write leaves a stray object, and an unpointed object is unreachable | Storing cost becoming a concern — `r2 object list` and sweep |
 | `robots.txt` disallows app paths but is advisory | Not a security control | Anything relying on it |
 
 ## Not in scope

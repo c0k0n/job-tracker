@@ -15,6 +15,7 @@ import {
 	softDeleteApplication,
 	updateApplication
 } from '$lib/server/applications-data';
+import { isResumeOwned, listResumes } from '$lib/server/resumes-data';
 import { computeKpis } from '$lib/utils/kpis';
 import { parseSalaryFromForm } from '$lib/utils/money';
 import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
@@ -55,11 +56,13 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 	// count, upcoming interviews, stage moves) — the queries are
 	// independent, so Promise.all + D1's session reuse issues them
 	// together instead of sequentially (free-tier CPU + latency win).
-	const { active, trashedCount, upcomingInterviews, stageMoves } = await getDashboardData(
-		db,
-		locals.user.id,
-		30
-	);
+	// Resumes ride in the same batch as the rollups rather than becoming a
+	// second sequential await: the library modal, the create form's picker
+	// and the table's attachment icons all need them on every load.
+	const [{ active, trashedCount, upcomingInterviews, stageMoves }, resumes] = await Promise.all([
+		getDashboardData(db, locals.user.id, 30),
+		listResumes(db, locals.user.id)
+	]);
 	const applications = trashView
 		? await getApplicationsForUser(db, locals.user.id, { onlyTrashed: true })
 		: active;
@@ -69,6 +72,7 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 	return {
 		user: locals.user,
 		applications,
+		resumes,
 		kpis,
 		isAdmin: isAdminUser(locals.user),
 		filters,
@@ -174,10 +178,17 @@ export const actions: Actions = {
 			stage?: string;
 			status?: string;
 			workArrangement?: string;
+			resume?: string;
 			salary?: string;
 			appliedAt?: string;
 			nextActionAt?: string;
 		} = { ...salaryErrors };
+		// resumeId is free text from the form: it has to be one of *this*
+		// user's resumes, or an application could be pointed at a file that
+		// belongs to somebody else.
+		if (resumeId && !(await isResumeOwned(db, locals.user.id, resumeId))) {
+			errors.resume = 'Pick one of your own resumes.';
+		}
 		if (!company) errors.company = 'Company is required.';
 		if (!role) errors.role = 'Role is required.';
 		if (!stage) errors.stage = 'Pick a stage.';
@@ -273,9 +284,16 @@ export const actions: Actions = {
 			String(form.get('salaryMax') ?? '') || null
 		);
 
-		const errors: { salary?: string; appliedAt?: string; nextActionAt?: string } = {
-			...salaryErrors
-		};
+		const errors: {
+			salary?: string;
+			appliedAt?: string;
+			nextActionAt?: string;
+			resume?: string;
+		} = { ...salaryErrors };
+		// Same ownership rule as create: the id comes from the form.
+		if (resumeId && !(await isResumeOwned(db, locals.user.id, resumeId))) {
+			errors.resume = 'Pick one of your own resumes.';
+		}
 		if (appliedAt === 'invalid') errors.appliedAt = 'Enter a valid date.';
 		if (nextActionAt === 'invalid') errors.nextActionAt = 'Enter a valid date.';
 		if (Object.keys(errors).length > 0 || appliedAt === 'invalid' || nextActionAt === 'invalid') {

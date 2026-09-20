@@ -1,6 +1,6 @@
 # Routes
 
-Six route groups. Every one of them is server-rendered; there is no SPA fallback and no client
+Eight route groups. Every one of them is server-rendered; there is no SPA fallback and no client
 router doing data fetching.
 
 ```mermaid
@@ -9,6 +9,8 @@ flowchart TD
     R -->|"sign up"| P["/pending-approval"]
     D -->|"admin only"| A["/admin/approvals"]
     D -->|"download"| C["/dashboard/export.csv"]
+    D -->|"library"| RR["/api/resumes<br/>GET · POST"]
+    RR --> RI["/api/resumes/[id]<br/>GET · DELETE"]
     X["anything else"] --> N["[...path] → 404"]
     N --> E["+error.svelte"]
 ```
@@ -22,8 +24,31 @@ flowchart TD
 | `/dashboard` | `+page.server.ts` | Redirects to `/` if not signed in | The app |
 | `/dashboard/export.csv` | `+server.ts` | Same as dashboard | CSV download of the current view |
 | `/admin/approvals` | `+page.server.ts` | Signed in **and** `role === 'admin'` | Approval queue |
+| `/api/resumes` | `+server.ts` | Signed in | `GET` list, `POST` upload |
+| `/api/resumes/[id]` | `+server.ts` | Signed in **and** owns the row | `GET` stream the PDF, `DELETE` remove it |
 | `/[...path]` | `+page.ts` | none | Throws 404 so `+error.svelte` renders |
 | `/api/auth/*` | via `svelteKitHandler` | Better Auth | Auth endpoints, mounted in `hooks.server.ts` |
+
+## The resume endpoints
+
+The only non-form mutation surface in the app, because a form action would push a 10 MB body
+through the SSR round-trip.
+
+```mermaid
+flowchart LR
+    A["GET /api/resumes"] --> B["list + usedBy count"]
+    C["POST /api/resumes"] --> D["413 · 409 · 415<br/>then put + insert"]
+    E["GET /api/resumes/[id]"] --> F["stream, no-store,<br/>X-Frame-Options SAMEORIGIN"]
+    G["DELETE /api/resumes/[id]"] --> H["object + row + detach"]
+```
+
+| Status | Means |
+|---|---|
+| 401 | No session |
+| 404 | No such resume **for this user** — a foreign id misses, it does not deny |
+| 409 | Already at 20 resumes. Delete one first |
+| 413 | Over 10 MB, judged from `content-length` before the body is read |
+| 415 | Not a PDF. The first five bytes were not `%PDF-` |
 
 ## Actions
 
@@ -43,8 +68,8 @@ flowchart LR
 | Route | Action | Does |
 |---|---|---|
 | `/` | `default` | Branches on `mode`: `signin` or `signup`. Pre-checks `disabled` before signing in |
-| `/dashboard` | `create` | New application |
-| | `edit` | Update an existing one |
+| `/dashboard` | `create` | New application. A submitted `resumeId` must pass `isResumeOwned()` |
+| | `edit` | Update an existing one; same `resumeId` check |
 | | `delete` | Soft delete — sets `deletedAt` |
 | | `restore` | Clears `deletedAt` |
 | | `purge` | Hard delete one row |
@@ -99,6 +124,9 @@ The `?next=` parameter goes through `safeNextParam`, which rejects anything star
   treats it as text, not a formula.
 - **No buffering.** It streams rows rather than building one giant string, which keeps it inside
   the Worker memory ceiling.
+- **Resumes by name, not id.** The `resume` column is the filename looked up from `listResumes()`,
+  batched into the same load rather than queried per row. An application whose resume was deleted
+  exports an empty cell instead of a dangling id.
 
 ## Error handling
 
