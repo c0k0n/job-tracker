@@ -215,6 +215,23 @@ for SvelteKit it is always true and never actionable — `vite-plugin-sveltekit-
 is most of the build. Newer rolldown versions rename that option to `checks.bundlerTimings`, so if
 the block ever comes back after an upgrade, change the key.
 
+## One dashboard setting worth adding
+
+Not code, so it is easy to miss: **add a rate limiting rule to the sign-in form.** Better Auth's own
+limiter only guards `/api/auth/*`, and the sign-in form does not post there — so out of the box
+there is no ceiling on password guesses. The Free plan includes one WAF rate limiting rule, which is
+exactly enough:
+
+| Setting | Value |
+|---|---|
+| Expression | Path **equals** `/` |
+| Characteristic | IP |
+| Period / requests | 10 seconds / 20 |
+| Action | Block |
+
+The reasoning, and why this beats an in-app counter, is in
+[security.md](security.md#throttling).
+
 ## The one thing to know before you go live
 
 Everything in this app fits the Workers free tier except **one request**: sign-in and sign-up.

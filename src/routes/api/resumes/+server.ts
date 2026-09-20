@@ -54,10 +54,18 @@ export const POST: RequestHandler = async ({ locals, platform, request }) => {
 	const db = getDb(platform!.env.DB);
 	const bucket = platform!.env.RESUMES;
 
-	// Reject an oversized body before buffering it. Chunked uploads carry no
-	// content-length; those fall through to the file.size check below.
-	const declared = Number(request.headers.get('content-length') ?? '');
-	if (Number.isFinite(declared) && declared > MAX_RESUME_BYTES + MULTIPART_SLACK_BYTES) {
+	// Reject an oversized body before buffering it.
+	//
+	// A chunked upload carries no content-length, and `formData()` would
+	// happily buffer the whole thing into a 128 MB isolate before we ever get
+	// to check `file.size`. Browsers always send a content-length for a form
+	// upload, so requiring one costs nothing real and closes that hole.
+	const declaredLength = request.headers.get('content-length');
+	if (declaredLength === null) {
+		return fail(411, 'That upload did not declare its size.');
+	}
+	const declared = Number(declaredLength);
+	if (!Number.isFinite(declared) || declared > MAX_RESUME_BYTES + MULTIPART_SLACK_BYTES) {
 		return fail(413, 'That file is too large. The limit is 10 MB.');
 	}
 
@@ -65,7 +73,15 @@ export const POST: RequestHandler = async ({ locals, platform, request }) => {
 		return fail(409, `You can keep up to ${MAX_RESUMES_PER_USER} resumes. Delete one first.`);
 	}
 
-	const form = await request.formData();
+	let form: FormData;
+	try {
+		form = await request.formData();
+	} catch {
+		// A malformed multipart body makes the parser throw — a filename
+		// containing a raw CR/LF does it. That is a bad request, not a server
+		// fault, but unguarded it surfaced as a bare 500.
+		return fail(400, 'That upload could not be read. Please try again.');
+	}
 	const entry = form.get('file');
 	if (!(entry instanceof File)) return fail(400, 'No file was received.');
 	if (entry.size === 0) return fail(400, 'That file is empty.');

@@ -28,6 +28,21 @@ function applySecurityHeaders(response: Response): void {
 		// Don't clobber a more specific header a route already set.
 		if (!response.headers.has(key)) response.headers.set(key, value);
 	}
+
+	// SvelteKit does not send Cache-Control on rendered HTML, so a page full
+	// of one person's applications had no caching directive at all. Anything
+	// that caches by default — a corporate proxy, a CDN rule, a browser shared
+	// with someone else — could hold on to it. Private pages must say so.
+	//
+	// Only HTML: /api/resumes and the CSV export already send `no-store`
+	// themselves, and static assets are served by the ASSETS binding without
+	// ever reaching this hook, so their caching is untouched.
+	if (
+		!response.headers.has('Cache-Control') &&
+		(response.headers.get('Content-Type') ?? '').includes('text/html')
+	) {
+		response.headers.set('Cache-Control', 'private, no-store');
+	}
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

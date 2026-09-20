@@ -137,6 +137,52 @@ function parseDateInput(raw: string): Date | null | 'invalid' {
 	return Number.isNaN(d.getTime()) ? 'invalid' : d;
 }
 
+/**
+ * Field length ceilings.
+ *
+ * There were none. An authenticated user could post a 2 MB `company`, or
+ * 50 000 tags, and the worker would spend its entire CPU budget parsing and
+ * echoing it back while D1 stored every byte — 50 000 tags is a 538 KB cell.
+ * Nobody needs that much room for a job application, and the free tier has
+ * 10 ms of CPU per request and 500 MB of database.
+ *
+ * The numbers are deliberately generous for real content: a job posting
+ * paste fits comfortably in `long`, and nobody's employer name needs 200
+ * characters.
+ */
+const FIELD_LIMITS = {
+	/** company, role, contact name — one line of a table. */
+	short: 200,
+	/** notes, posting description — free text, can be long. */
+	long: 20_000,
+	/** A URL is a URL; 2048 is the de-facto browser ceiling. */
+	url: 2_048,
+	tags: 50,
+	tagLength: 40
+} as const;
+
+/** Message for a field that went over `max`. */
+function tooLong(max: number): string {
+	return `That is longer than we accept (${max} characters).`;
+}
+
+/**
+ * Split and normalise the tag input, rejecting rather than silently
+ * truncating — a user who pasted 60 tags should be told, not quietly
+ * lose ten of them.
+ */
+function parseTags(raw: string): { tags: string[] } | { error: string } {
+	if (!raw) return { tags: [] };
+	const parts = raw
+		.split(',')
+		.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
+		.filter(Boolean);
+	if (parts.length > FIELD_LIMITS.tags) return { error: `Use up to ${FIELD_LIMITS.tags} tags.` };
+	if (parts.some((t) => t.length > FIELD_LIMITS.tagLength))
+		return { error: `Keep each tag under ${FIELD_LIMITS.tagLength} characters.` };
+	return { tags: parts };
+}
+
 export const actions: Actions = {
 	/**
 	 * Sign out via Better Auth (clears the session row + cookie). Named
@@ -170,12 +216,8 @@ export const actions: Actions = {
 		const appliedAt = parseDateInput(String(form.get('appliedAt') ?? ''));
 		const nextActionAt = parseDateInput(String(form.get('nextActionAt') ?? ''));
 		const tagsRaw = String(form.get('tags') ?? '').trim();
-		const tags = tagsRaw
-			? tagsRaw
-					.split(',')
-					.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
-					.filter(Boolean)
-			: [];
+		const parsedTags = parseTags(tagsRaw);
+		const tags = 'tags' in parsedTags ? parsedTags.tags : [];
 
 		const { salary, errors: salaryErrors } = parseSalaryFromForm(
 			String(form.get('salaryShape') ?? ''),
@@ -191,11 +233,22 @@ export const actions: Actions = {
 			stage?: string;
 			status?: string;
 			workArrangement?: string;
+			postingUrl?: string;
+			postingDescription?: string;
+			notes?: string;
+			tags?: string;
 			resume?: string;
 			salary?: string;
 			appliedAt?: string;
 			nextActionAt?: string;
 		} = { ...salaryErrors };
+		if ('error' in parsedTags) errors.tags = parsedTags.error;
+		if (company.length > FIELD_LIMITS.short) errors.company = tooLong(FIELD_LIMITS.short);
+		if (role.length > FIELD_LIMITS.short) errors.role = tooLong(FIELD_LIMITS.short);
+		if ((postingUrl ?? '').length > FIELD_LIMITS.url) errors.postingUrl = tooLong(FIELD_LIMITS.url);
+		if ((postingDescription ?? '').length > FIELD_LIMITS.long)
+			errors.postingDescription = tooLong(FIELD_LIMITS.long);
+		if ((notes ?? '').length > FIELD_LIMITS.long) errors.notes = tooLong(FIELD_LIMITS.long);
 		// resumeId is free text from the form: it has to be one of *this*
 		// user's resumes, or an application could be pointed at a file that
 		// belongs to somebody else.
@@ -283,12 +336,8 @@ export const actions: Actions = {
 		const appliedAt = parseDateInput(String(form.get('appliedAt') ?? ''));
 		const nextActionAt = parseDateInput(String(form.get('nextActionAt') ?? ''));
 		const tagsRaw = String(form.get('tags') ?? '').trim();
-		const tags = tagsRaw
-			? tagsRaw
-					.split(',')
-					.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
-					.filter(Boolean)
-			: undefined;
+		const parsedTags = parseTags(tagsRaw);
+		const tags = 'tags' in parsedTags ? parsedTags.tags : undefined;
 		const { salary, errors: salaryErrors } = parseSalaryFromForm(
 			String(form.get('salaryShape') ?? ''),
 			String(form.get('salaryCurrency') ?? ''),
@@ -298,11 +347,22 @@ export const actions: Actions = {
 		);
 
 		const errors: {
+			company?: string;
+			role?: string;
+			postingUrl?: string;
+			postingDescription?: string;
+			notes?: string;
+			tags?: string;
 			salary?: string;
 			appliedAt?: string;
 			nextActionAt?: string;
 			resume?: string;
 		} = { ...salaryErrors };
+		if ('error' in parsedTags) errors.tags = parsedTags.error;
+		if ((postingUrl ?? '').length > FIELD_LIMITS.url) errors.postingUrl = tooLong(FIELD_LIMITS.url);
+		if ((postingDescription ?? '').length > FIELD_LIMITS.long)
+			errors.postingDescription = tooLong(FIELD_LIMITS.long);
+		if ((notes ?? '').length > FIELD_LIMITS.long) errors.notes = tooLong(FIELD_LIMITS.long);
 		// Same ownership rule as create: the id comes from the form.
 		if (resumeId && !(await isResumeOwned(db, locals.user.id, resumeId))) {
 			errors.resume = 'Pick one of your own resumes.';
@@ -426,6 +486,12 @@ export const actions: Actions = {
 				errors: { form: 'A valid kind, date, and application are required.' }
 			});
 		}
+		if ((withName ?? '').length > FIELD_LIMITS.short || (notes ?? '').length > FIELD_LIMITS.long) {
+			return fail(400, {
+				operation: 'addInterview',
+				errors: { form: 'Those details are longer than we accept.' }
+			});
+		}
 		const result = await addInterview(db, locals.user.id, applicationId, {
 			kind,
 			scheduledAt: scheduledAt.toISOString(),
@@ -456,6 +522,18 @@ export const actions: Actions = {
 			return fail(400, {
 				operation: 'addContact',
 				errors: { name: 'Name is required.' }
+			});
+		}
+		if (
+			name.length > FIELD_LIMITS.short ||
+			(role ?? '').length > FIELD_LIMITS.short ||
+			(company ?? '').length > FIELD_LIMITS.short ||
+			(email ?? '').length > FIELD_LIMITS.short ||
+			(notes ?? '').length > FIELD_LIMITS.long
+		) {
+			return fail(400, {
+				operation: 'addContact',
+				errors: { name: 'Those details are longer than we accept.' }
 			});
 		}
 		const result = await addContact(db, locals.user.id, applicationId, {

@@ -88,6 +88,10 @@
 					stage?: string;
 					status?: string;
 					workArrangement?: string;
+					postingUrl?: string;
+					postingDescription?: string;
+					notes?: string;
+					tags?: string;
 					resume?: string;
 					salary?: string;
 			  }
@@ -160,13 +164,20 @@
 			.join(', ');
 	}
 
-	const formError = $derived(
-		errors?.company ||
-			errors?.role ||
-			errors?.stage ||
-			errors?.status ||
-			errors?.workArrangement ||
-			errors?.salary
+	/**
+	 * Errors this form draws next to their own input. Anything else — `tags`,
+	 * `notes`, `postingUrl` — has no field of its own, so its message has to
+	 * surface in the summary banner. Listing the keys explicitly (rather than
+	 * "any error at all") means a new server-side check can never fail
+	 * silently just because nobody added a paragraph for it.
+	 */
+	const INLINE_ERROR_KEYS = ['company', 'role', 'salary', 'resume'] as const;
+
+	const formError = $derived(Object.keys(errors ?? {}).length > 0);
+	const unfieldedError = $derived(
+		Object.entries(errors ?? {}).find(
+			([key]) => !(INLINE_ERROR_KEYS as readonly string[]).includes(key)
+		)?.[1] ?? null
 	);
 
 	const inputClass =
@@ -408,7 +419,7 @@
 			aria-live="polite"
 			class="rounded-md border border-danger bg-danger-bg px-3 py-2 text-sm text-danger"
 		>
-			Fix the highlighted fields before saving.
+			{unfieldedError ?? 'Fix the highlighted fields before saving.'}
 		</div>
 	{/if}
 

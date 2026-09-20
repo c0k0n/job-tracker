@@ -273,7 +273,11 @@ export async function permanentlyDeleteApplication(
 		.delete(application)
 		.where(and(eq(application.id, id), eq(application.userId, userId)))
 		.run();
-	return result.success;
+	// `result.success` only means the statement ran. D1 reports success with
+	// zero matched rows, which would tell the caller a row was purged when
+	// nothing was — including a row that belongs to somebody else. Rows
+	// actually removed is the only honest answer.
+	return (result.meta.changes ?? 0) > 0;
 }
 
 /** Empty the trash: hard-delete every soft-deleted row for the user.

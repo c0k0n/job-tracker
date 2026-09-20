@@ -27,11 +27,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {};
 };
 
-/** Origin-relative ?next= guard: reject `//` and `/\` tricks (browsers
- *  normalize `/\` to `//`, an open redirect). */
+/**
+ * Origin-relative ?next= guard: reject `//` and `/\` tricks (browsers
+ * normalize `/\` to `//`, an open redirect).
+ *
+ * `%` is rejected too. `/%2f%2fevil.example.com` starts with a single slash
+ * so it passes the checks above, and although browsers keep `%2f` encoded
+ * when resolving a Location, a proxy or a hand-rolled redirect handler that
+ * decodes before resolving would turn it into `//evil.example.com`. There is
+ * no legitimate reason for a percent-escape in an internal path here.
+ */
 function safeNextParam(raw: string): string {
-	if (raw.startsWith('/') && !raw.startsWith('//') && !raw.startsWith('/\\')) return raw;
-	return '/dashboard';
+	if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/dashboard';
+	if (raw.includes('%')) return '/dashboard';
+	return raw;
 }
 
 /**
@@ -81,6 +90,18 @@ interface FieldErrors {
 	confirm?: string;
 	_form?: string;
 }
+
+/**
+ * The only sign-in failure message a visitor who does not know the password
+ * ever sees.
+ *
+ * Every dead end — no such account, wrong password, unknown username — has to
+ * answer with this same string, or the form becomes an account-existence
+ * oracle: send an email, read whether you got "waiting for approval" or
+ * "incorrect", and you have enumerated the user list without guessing
+ * anything. Worth more than the slightly nicer copy it costs.
+ */
+const INVALID_CREDENTIALS = 'Email or password is incorrect. Check for typos and try again.';
 
 export const actions: Actions = {
 	default: async ({ request, url }) => {
@@ -216,10 +237,9 @@ export const actions: Actions = {
 			throw redirect(303, handle ? `/pending-approval?handle=${handle}` : '/pending-approval');
 		}
 
-		// Sign-in: resolve "username or email" to an email first, then
-		// check the approval gate BEFORE calling signInEmail — an
-		// unapproved account must never receive a session (the
-		// /pending-approval trap was a session that couldn't be escaped).
+		// Sign-in: resolve "username or email" to an email first. The
+		// approval gate is enforced *after* signInEmail, not before — see the
+		// note down there for why the order matters.
 		let email = emailOrUsername;
 		let userRow: { id: string; email: string; disabled: boolean } | undefined;
 		if (email.includes('@')) {
@@ -239,28 +259,20 @@ export const actions: Actions = {
 				.all();
 			userRow = rows[0];
 			if (!userRow) {
-				return authFail(400, mode, emailOrUsername, {
-					emailOrUsername: 'No account matches that username.'
-				});
+				// Same generic message as every other failed sign-in. An
+				// unknown username used to get "no account matches that
+				// username", which turned this form into a free
+				// username-existence oracle — and handles here are derived
+				// from the email address, so it leaked those too.
+				return authFail(401, mode, emailOrUsername, { _form: INVALID_CREDENTIALS });
 			}
 			email = userRow.email;
 		}
 
-		if (userRow?.disabled) {
-			// Account exists but is waiting for approval. Deliberately
-			// vague about the password so we don't leak which passwords
-			// are valid; the user just needs to wait.
-			return authFail(403, mode, emailOrUsername, {
-				_form: 'That account is waiting for approval. Check back once an admin lets you in.'
-			});
-		}
-
 		if (!userRow) {
-			// No account for that email. Same message Better Auth uses so
-			// behavior stays consistent between lookup paths.
-			return authFail(401, mode, emailOrUsername, {
-				_form: 'Email or password is incorrect. Check for typos and try again.'
-			});
+			// No account for that email, so there is nothing to verify a
+			// password against. Identical message to a wrong password.
+			return authFail(401, mode, emailOrUsername, { _form: INVALID_CREDENTIALS });
 		}
 
 		try {
@@ -285,7 +297,7 @@ export const actions: Actions = {
 				err.message &&
 				/invalid email or password|invalid username or password/i.test(err.message)
 			) {
-				message = 'Email or password is incorrect. Check for typos and try again.';
+				message = INVALID_CREDENTIALS;
 			} else if (err instanceof Error && err.message) {
 				message = err.message;
 			} else {
@@ -293,6 +305,29 @@ export const actions: Actions = {
 			}
 			return authFail(status === 429 ? 429 : 401, mode, emailOrUsername, {
 				_form: message
+			});
+		}
+
+		// The approval gate, now behind the password.
+		//
+		// It used to run first, so "this account is waiting for approval" was
+		// answerable by anyone who knew an email address and nothing else.
+		// Verifying the password first means only the account's owner can
+		// reach that message.
+		//
+		// The cost is that an unapproved account briefly gets a real session
+		// (signInEmail has already run). It is revoked on the spot, and
+		// hooks.server.ts revokes any disabled user's session on every
+		// request regardless — so even if this sign-out failed, the account
+		// still cannot reach a guarded route. Two independent backstops.
+		if (userRow.disabled) {
+			try {
+				await auth.api.signOut({ headers: request.headers });
+			} catch {
+				// Session row already gone, or a race. hooks covers it.
+			}
+			return authFail(403, mode, emailOrUsername, {
+				_form: 'That account is waiting for approval. Check back once an admin lets you in.'
 			});
 		}
 
