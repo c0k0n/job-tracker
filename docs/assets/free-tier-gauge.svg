@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 250" width="780" height="250" role="img" aria-label="Free tier headroom for a single active user">
+	<title>Free-tier headroom</title>
+	<style>
+		.bg { fill: #0d1117; }
+		.track { fill: #21262d; }
+		.fill { fill: #3fb950; }
+		.fill-w { fill: #d29922; }
+		.lbl { fill: #e6edf3; font: 600 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+		.num { fill: #8b949e; font: 400 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.hd { fill: #f0b429; font: 600 10px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+		@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+		.s1 { animation: grow 1s cubic-bezier(.2,.7,.2,1) both; transform-origin: 0 0; }
+		.s2 { animation: grow 1s cubic-bezier(.2,.7,.2,1) .15s both; transform-origin: 0 0; }
+		.s3 { animation: grow 1s cubic-bezier(.2,.7,.2,1) .3s both; transform-origin: 0 0; }
+		.s4 { animation: grow 1s cubic-bezier(.2,.7,.2,1) .45s both; transform-origin: 0 0; }
+	</style>
+
+	<rect class="bg" x="0" y="0" width="780" height="250" rx="10"/>
+	<text class="hd" x="28" y="30">FREE-TIER HEADROOM  ·  one active user, one day</text>
+
+	<text class="lbl" x="28" y="66">Requests / day</text>
+	<rect class="track" x="200" y="54" width="520" height="16" rx="4"/>
+	<rect class="fill s1" x="200" y="54" width="5" height="16" rx="4"/>
+	<text class="num" x="720" y="67" text-anchor="end">~100 of 100,000</text>
+
+	<text class="lbl" x="28" y="106">D1 rows read</text>
+	<rect class="track" x="200" y="94" width="520" height="16" rx="4"/>
+	<rect class="fill s2" x="200" y="94" width="10" height="16" rx="4"/>
+	<text class="num" x="720" y="107" text-anchor="end">thousands of 5,000,000</text>
+
+	<text class="lbl" x="28" y="146">Database size</text>
+	<rect class="track" x="200" y="134" width="520" height="16" rx="4"/>
+	<rect class="fill s3" x="200" y="134" width="3" height="16" rx="4"/>
+	<text class="num" x="720" y="147" text-anchor="end">~1 MB of 500 MB</text>
+
+	<text class="lbl" x="28" y="186">CPU per request</text>
+	<rect class="track" x="200" y="174" width="520" height="16" rx="4"/>
+	<rect class="fill-w s4" x="200" y="174" width="140" height="16" rx="4"/>
+	<text class="num" x="720" y="187" text-anchor="end">~2-3 ms of 10 ms  ·  the only tight one</text>
+
+	<text class="num" x="28" y="228">The 10 ms CPU ceiling is why the dashboard issues ONE batched aggregate instead of a query per widget.</text>
+	<text class="num" x="28" y="244">Full numbers: docs/free-tier-budget.md</text>
+</svg>

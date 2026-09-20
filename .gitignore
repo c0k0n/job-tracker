@@ -12,6 +12,9 @@ build/
 # Session exports (local-only)
 .agent-sessions/
 
+# WorkBuddy workspace data
+.workbuddy-ai/
+
 # Editor and OS files
 .vscode/
 .DS_Store

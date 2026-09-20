@@ -1,7 +1,7 @@
 /**
  * Better Auth server module.
  *
- * Cloudflare Workers gotcha (see docs/better-auth-research.md
+ * Cloudflare Workers gotcha (see docs/research/better-auth.md
  * "Cloudflare Workers / D1 gotchas"): `betterAuth()` reads `secret` /
  * `baseURL` at call time, but env bindings only exist per request. The
  * documented pattern for this combo is building the instance from
@@ -47,7 +47,16 @@ function buildAuth(env: Env) {
 	return betterAuth({
 		appName: 'Job Tracker',
 		secret: env.BETTER_AUTH_SECRET,
-		baseURL: env.BETTER_AUTH_URL,
+		// Leave baseURL undefined unless BETTER_AUTH_URL is set. When it is
+		// undefined, Better Auth resolves it per request from the request
+		// origin (verified in better-auth/dist/utils/url.mjs → getBaseURL:
+		// `if (request) { const url = getOrigin(request.url); ... }`).
+		// That means the same build works on http://localhost:5173 and on
+		// https://job-tracker.sanctum.workers.dev with no per-environment
+		// config — and it removes the whole class of bug where a localhost
+		// URL ships to production and every auth call gets rejected.
+		// Set BETTER_AUTH_URL only to pin it to one origin.
+		baseURL: env.BETTER_AUTH_URL || undefined,
 		// baseURL is always trusted; extra dev origins come from an optional
 		// DEV_ORIGINS var (comma-separated). Never hardcode localhost here —
 		// Better Auth docs: "Do not leave the localhost origin in a trusted
@@ -80,7 +89,14 @@ function buildAuth(env: Env) {
 			requireEmailVerification: false,
 			minPasswordLength: 8,
 			maxPasswordLength: 128,
-			autoSignIn: true
+			// Sign-ups never get a session: most land in the approval
+			// queue, and Better Auth's auto-sign-in would hand them a
+			// valid session cookie that every guarded route then has to
+			// bounce around (the /pending-approval trap). With this off,
+			// signUpEmail returns { token: null, user } — the account
+			// exists, but nobody is "signed in" until an admin approves
+			// and the user signs in for real.
+			autoSignIn: false
 		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,

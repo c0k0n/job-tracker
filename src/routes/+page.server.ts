@@ -20,8 +20,10 @@ import { user } from '$lib/server/db/schema';
  */
 export const load: PageServerLoad = async ({ locals }) => {
 	if (locals.user) throw redirect(303, '/dashboard');
-	// Disabled-but-authenticated: send to the notice page, not the form.
-	if (locals.session) throw redirect(303, '/pending-approval');
+	// No session-trap: sign-ups get no session (autoSignIn off), and
+	// hooks.server.ts revokes any legacy disabled-user session, so a
+	// visitor here without locals.user is genuinely signed out and
+	// should see the form.
 	return {};
 };
 
@@ -36,7 +38,7 @@ function safeNextParam(raw: string): string {
  * ActionData union collapses to a single FailPayload instead of
  * per-call literal types. */
 function authFail(
-	status: 400 | 401 | 429 | 500,
+	status: 400 | 401 | 403 | 429 | 500,
 	mode: string,
 	emailOrUsername: string,
 	fieldErrors: FieldErrors
@@ -67,6 +69,10 @@ export const actions: Actions = {
 			fieldErrors.emailOrUsername = 'That looks too short to be a username or email.';
 		} else if (emailOrUsername.length > 254) {
 			fieldErrors.emailOrUsername = 'That is longer than we accept.';
+		} else if (mode === 'signup' && !emailOrUsername.includes('@')) {
+			// Sign-up keys the account on a real email; the username
+			// plugin stores the local part as the sign-in handle.
+			fieldErrors.emailOrUsername = 'Sign up with your email, like name@example.com.';
 		}
 
 		if (!password) {
@@ -95,67 +101,114 @@ export const actions: Actions = {
 		}
 
 		const auth = getAuth();
+		const platform = getRequestEvent().platform;
+		if (!platform?.env?.DB) {
+			return authFail(500, mode, emailOrUsername, { _form: 'Database unavailable.' });
+		}
+		const db = getDb(platform.env.DB);
 
-		// Resolve "username or email" to an email for credential sign-in.
-		// The username plugin's signInUsername exists, but resolving here keeps
-		// one code path and lets us surface a uniform error shape.
-		let email = emailOrUsername;
-		if (!email.includes('@')) {
-			const platform = getRequestEvent().platform;
-			if (!platform?.env?.DB) {
-				return authFail(500, mode, emailOrUsername, { _form: 'Database unavailable.' });
+		if (mode === 'signup') {
+			// With autoSignIn off, Better Auth deliberately returns a
+			// generic "created" response for an existing email so
+			// sign-ups can't be used to enumerate accounts. We want the
+			// honest, friendly error instead, so check ourselves.
+			const existing = await db
+				.select({ id: user.id })
+				.from(user)
+				.where(eq(user.email, emailOrUsername.toLowerCase()))
+				.limit(1)
+				.all();
+			if (existing.length > 0) {
+				return authFail(400, mode, emailOrUsername, {
+					emailOrUsername: 'That email already has an account. Sign in instead.'
+				});
 			}
-			const rows = await getDb(platform.env.DB)
-				.select({ email: user.email })
+			// Same for the derived username (email local part) — BA would
+			// surface "Username is invalid/taken" jargon at sign-in time.
+			const username = emailOrUsername.split('@')[0]!.toLowerCase();
+			const takenUsername = await db
+				.select({ id: user.id })
+				.from(user)
+				.where(eq(user.username, username))
+				.limit(1)
+				.all();
+			if (takenUsername.length > 0) {
+				return authFail(400, mode, emailOrUsername, {
+					emailOrUsername: 'That email is taken because its handle is. Try a different address.'
+				});
+			}
+
+			// The first user ever bootstraps as an approved admin inside
+			// the create.before hook in auth.ts; everyone else lands in
+			// the approval queue. autoSignIn is off, so no session cookie
+			// is set either way.
+			await auth.api.signUpEmail({
+				body: {
+					email: emailOrUsername,
+					name: username,
+					username,
+					password,
+					callbackURL: safeNextParam(url.searchParams.get('next') ?? '')
+				}
+			});
+			throw redirect(303, '/pending-approval');
+		}
+
+		// Sign-in: resolve "username or email" to an email first, then
+		// check the approval gate BEFORE calling signInEmail — an
+		// unapproved account must never receive a session (the
+		// /pending-approval trap was a session that couldn't be escaped).
+		let email = emailOrUsername;
+		let userRow: { id: string; email: string; disabled: boolean } | undefined;
+		if (email.includes('@')) {
+			const rows = await db
+				.select({ id: user.id, email: user.email, disabled: user.disabled })
+				.from(user)
+				.where(eq(user.email, emailOrUsername.toLowerCase()))
+				.limit(1)
+				.all();
+			userRow = rows[0];
+		} else {
+			const rows = await db
+				.select({ id: user.id, email: user.email, disabled: user.disabled })
 				.from(user)
 				.where(eq(user.username, emailOrUsername.toLowerCase()))
 				.limit(1)
 				.all();
-			const found = rows[0]?.email;
-			if (!found) {
+			userRow = rows[0];
+			if (!userRow) {
 				return authFail(400, mode, emailOrUsername, {
 					emailOrUsername: 'No account matches that username.'
 				});
 			}
-			email = found;
+			email = userRow.email;
 		}
 
-		// Both calls return the authenticated user — the approval gate is
-		// readable straight off the result (the session cookie isn't on
-		// request.headers yet, so a getSession follow-up can't see it).
-		let authUser: { disabled?: boolean } | undefined;
+		if (userRow?.disabled) {
+			// Account exists but is waiting for approval. Deliberately
+			// vague about the password so we don't leak which passwords
+			// are valid; the user just needs to wait.
+			return authFail(403, mode, emailOrUsername, {
+				_form: 'That account is waiting for approval. Check back once an admin lets you in.'
+			});
+		}
+
+		if (!userRow) {
+			// No account for that email. Same message Better Auth uses so
+			// behavior stays consistent between lookup paths.
+			return authFail(401, mode, emailOrUsername, {
+				_form: 'Email or password is incorrect. Check for typos and try again.'
+			});
+		}
+
 		try {
-			if (mode === 'signup') {
-				// Sign-up keys the account on a real email; the username
-				// plugin stores the local part as the sign-in handle.
-				if (!emailOrUsername.includes('@')) {
-					return authFail(400, mode, emailOrUsername, {
-						emailOrUsername: 'Sign up with your email; a username can be added after.'
-					});
-				}
-				const username = email.split('@')[0]!;
-				const result = await auth.api.signUpEmail({
-					body: {
-						email,
-						name: username,
-						username,
-						password,
-						callbackURL: safeNextParam(url.searchParams.get('next') ?? '')
-					}
-				});
-				authUser = result?.user ?? null;
-			} else {
-				const result = await auth.api.signInEmail({
-					body: { email, password }
-				});
-				authUser = result?.user ?? null;
-			}
+			await auth.api.signInEmail({ body: { email, password } });
 		} catch (err) {
-			// Map Better Auth APIError statuses to human copy. Raw messages
-			// ("Invalid username or password") stay, but infrastructure
-			// failures (429 rate limit, 500s) get actionable guidance instead
-			// of library jargon. `status`/`statusCode` confirmed on APIError
-			// from the installed @better-auth/core types.
+			// Map Better Auth APIError statuses to human copy. `status` /
+			// `statusCode` confirmed on APIError from the installed
+			// @better-auth/core types. Invalid credentials (401) and other
+			// client faults keep a friendly line; infrastructure failures
+			// (429, 5xx) get actionable guidance instead of library jargon.
 			const status =
 				typeof err === 'object' && err !== null && 'status' in err ? Number(err.status) : undefined;
 			let message: string;
@@ -166,24 +219,17 @@ export const actions: Actions = {
 			} else if (
 				err instanceof Error &&
 				err.message &&
-				mode === 'signin' &&
 				/invalid email or password|invalid username or password/i.test(err.message)
 			) {
 				message = 'Email or password is incorrect. Check for typos and try again.';
 			} else if (err instanceof Error && err.message) {
 				message = err.message;
 			} else {
-				message = 'Authentication failed. Try again.';
+				message = 'Sign-in failed. Try again.';
 			}
 			return authFail(status === 429 ? 429 : 401, mode, emailOrUsername, {
 				_form: message
 			});
-		}
-
-		// Approval gate: first user bootstraps as approved admin; later
-		// sign-ups wait in /admin/approvals.
-		if (authUser?.disabled) {
-			throw redirect(303, '/pending-approval');
 		}
 
 		const nextPath = safeNextParam(url.searchParams.get('next') ?? '');

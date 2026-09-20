@@ -19,12 +19,14 @@
 		icon?: Snippet;
 		/** Button content. */
 		children?: Snippet;
-		/** Extra classes (rare; for layout alignment in the dashboard). */
-		class?: string;
+		/** Native tooltip text. Svelte doesn't forward unknown attrs, so a
+		 * button-level title needs an explicit prop like ariaLabel. */
+		title?: string;
 		/** Native aria-label fallback when there's no visible text. */
 		ariaLabel?: string;
+		/** Extra classes (rare; for layout alignment in the dashboard). */
+		class?: string;
 	}
-
 	let {
 		variant = 'primary',
 		size = 'md',
@@ -35,7 +37,8 @@
 		icon,
 		children,
 		class: extraClass = '',
-		ariaLabel
+		ariaLabel,
+		title
 	}: Props = $props();
 
 	const variantClass = $derived(
@@ -66,6 +69,7 @@
 	disabled={disabled || busy}
 	aria-busy={busy || undefined}
 	aria-label={ariaLabel}
+	{title}
 	onclick={handleClick}
 	class="inline-flex cursor-pointer items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60 {variantClass} {sizeClass} {extraClass}"
 >

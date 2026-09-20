@@ -294,7 +294,14 @@
 								<div class="flex items-center justify-end gap-1.5">
 									<form method="POST" action="?/restore" use:enhance class="contents">
 										<input type="hidden" name="id" value={app.id} />
-										<Button type="submit" variant="outline" size="sm">Restore</Button>
+										<Button
+											type="submit"
+											variant="outline"
+											size="sm"
+											title="Put this application back in your active list"
+										>
+											Restore
+										</Button>
 									</form>
 									{#if confirmPurgeId === app.id}
 										<form method="POST" action="?/purge" use:enhance class="contents">
@@ -304,6 +311,7 @@
 												variant="danger"
 												size="sm"
 												ariaLabel={`Permanently delete ${app.company} ${app.role}`}
+												title="Remove this application and everything attached to it. This cannot be undone."
 											>
 												Delete for good
 											</Button>
@@ -313,6 +321,7 @@
 											variant="ghost"
 											size="sm"
 											onclick={() => (confirmPurgeId = null)}
+											ariaLabel="Cancel permanent delete"
 										>
 											Cancel
 										</Button>
@@ -323,6 +332,7 @@
 											size="sm"
 											ariaLabel={`Delete ${app.company} ${app.role} permanently`}
 											onclick={() => (confirmPurgeId = app.id)}
+											title="Delete permanently. The first click shows a confirm button."
 										>
 											Delete
 										</Button>
@@ -336,6 +346,7 @@
 										variant="ghost"
 										size="sm"
 										ariaLabel={`Move ${app.company} ${app.role} to trash`}
+										title="Move to trash. It stays restorable from the trash view."
 									>
 										{#snippet icon()}
 											<svg

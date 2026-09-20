@@ -14,6 +14,7 @@
 		type SalaryShapeValue
 	} from '$lib/utils/money';
 	import { toDateInputValue } from '$lib/utils/dates';
+	import { RESUME_URLS } from '$lib/constants/resumes';
 	import Button from './Button.svelte';
 	import SalaryInput from './SalaryInput.svelte';
 
@@ -30,9 +31,17 @@
 			errors?: Record<string, string>;
 			operation?: string;
 		};
+		/** Called once the server confirms a successful create/edit. The
+		 * modal that hosts this form owns its open state, so it closes
+		 * itself here — the form never touches navigation. */
+		onsuccess?: () => void;
 	}
 
-	let { application, create = false, result }: Props = $props();
+	let { application, create = false, result, onsuccess }: Props = $props();
+
+	// In-flight flag: disables the submit button while the action runs so
+	// a slow response can't turn into duplicate submissions.
+	let submitting = $state(false);
 
 	// Local form state. `application` provides the defaults when editing;
 	// `result.values` is the echo-back from a server-side validation failure.
@@ -71,7 +80,6 @@
 					salary?: string;
 			  }
 			| undefined;
-		const operation = result?.operation;
 
 		// Salary: prefer echo-back values, then existing application salary.
 		const echoSalary: SalaryFormValues | undefined =
@@ -89,7 +97,6 @@
 		return {
 			values,
 			errors,
-			operation,
 			form: {
 				company: values?.company ?? application?.company ?? '',
 				role: values?.role ?? application?.role ?? '',
@@ -108,7 +115,7 @@
 		};
 	});
 
-	const { errors, operation } = initial;
+	const { errors } = initial;
 	const form = initial.form;
 
 	let company = $state(form.company);
@@ -149,7 +156,6 @@
 			errors?.workArrangement ||
 			errors?.salary
 	);
-	const isBusy = $derived(operation === 'create' || operation === 'edit');
 
 	const inputClass =
 		'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
@@ -160,8 +166,20 @@
 	method="POST"
 	action={create ? '?/create' : '?/edit'}
 	use:enhance={() => {
-		return async ({ update }) => {
-			await update({ reset: false });
+		submitting = true;
+		return async ({ result, update }) => {
+			submitting = false;
+			if (result.type === 'success') {
+				// Server-side success: refresh the dashboard data and hand
+				// the "close me" decision to the host modal. No goto → no
+				// scroll jump, no re-navigation.
+				await update({ reset: true, invalidateAll: true });
+				onsuccess?.();
+			} else {
+				// Failure: keep the typed values (echo-back errors render
+				// above the fields) and stay open.
+				await update({ reset: false, invalidateAll: false });
+			}
 		};
 	}}
 	class="space-y-5"
@@ -303,19 +321,17 @@
 			class="{inputClass} placeholder:text-muted"></textarea>
 	</div>
 
-	<!-- Resume ID (external reference until R2 upload lands) -->
+	<!-- Resume (mock library until R2 upload lands) -->
 	<div class="space-y-1.5">
-		<label for="app-resume" class={labelClass}>Resume ID</label>
-		<input
-			id="app-resume"
-			name="resumeId"
-			type="text"
-			bind:value={resumeId}
-			placeholder="resume-acme"
-			class="{inputClass} placeholder:text-muted"
-		/>
+		<label for="app-resume" class={labelClass}>Resume</label>
+		<select id="app-resume" name="resumeId" bind:value={resumeId} class={inputClass}>
+			<option value="">None</option>
+			{#each Object.entries(RESUME_URLS) as [id] (id)}
+				<option value={id}>{id}</option>
+			{/each}
+		</select>
 		<p class="text-xs text-muted">
-			External resume key (matches <code class="font-mono">RESUME_URLS</code> until R2 upload lands).
+			Upload resumes with the Resumes button on the dashboard; pick one here to attach it.
 		</p>
 	</div>
 
@@ -361,8 +377,10 @@
 		<Button
 			type="submit"
 			variant="primary"
-			busy={isBusy}
+			busy={submitting}
+			disabled={submitting}
 			ariaLabel={create ? 'Create application' : 'Save changes'}
+			title={create ? 'Save this application and close' : 'Save your changes'}
 		>
 			{create ? 'Create application' : 'Save changes'}
 		</Button>

@@ -313,6 +313,7 @@
 								variant="outline"
 								disabled={!app.deletedAt}
 								ariaLabel="Restore from trash"
+								title="Put this application back in your active list"
 							>
 								Restore
 							</Button>
@@ -324,6 +325,7 @@
 								variant="outline"
 								disabled={!!app.deletedAt}
 								ariaLabel="Move to trash"
+								title="Move to trash. You can restore it later from the trash view."
 							>
 								Move to trash
 							</Button>
@@ -334,13 +336,19 @@
 								variant="danger"
 								onclick={openConfirmPurge}
 								ariaLabel="Permanently delete"
+								title="Delete this application for good. This cannot be undone."
 							>
 								Permanently delete
 							</Button>
 						{:else}
 							<form method="POST" action="?/purge" use:enhance class="contents">
 								<input type="hidden" name="id" value={app.id} />
-								<Button type="submit" variant="danger" ariaLabel="Confirm permanently delete">
+								<Button
+									type="submit"
+									variant="danger"
+									ariaLabel="Confirm permanently delete"
+									title="This removes the application and all its interviews, contacts, and history."
+								>
 									Confirm permanent delete
 								</Button>
 							</form>
@@ -562,7 +570,7 @@
 							{#each sortedActivities as ev (ev.id)}
 								<li class="relative">
 									<span
-										class="absolute -start-[1.4rem] top-1 inline-block size-2 rounded-full bg-accent"
+										class="absolute inset-s-[-1.4rem] top-1 inline-block size-2 rounded-full bg-accent"
 										aria-hidden="true"
 									></span>
 									<div class="flex items-baseline justify-between gap-3">
@@ -601,7 +609,11 @@
 				<h3 class="mb-3 font-mono text-[11px] tracking-widest text-muted uppercase">
 					Edit details
 				</h3>
-				<ApplicationForm {application} result={form?.operation === 'edit' ? form : undefined} />
+				<ApplicationForm
+					{application}
+					result={form?.operation === 'edit' && form.errors ? form : undefined}
+					onsuccess={() => (open = false)}
+				/>
 			</div>
 		{/if}
 	{/if}

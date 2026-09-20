@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 170" width="780" height="170" role="img" aria-label="Deploy pipeline from source to Cloudflare">
+	<title>Deploy pipeline</title>
+	<style>
+		.bg { fill: #0d1117; }
+		.box { fill: #161b22; stroke: #30363d; stroke-width: 1.5; }
+		.box-ok { fill: #161b22; stroke: #3fb950; stroke-width: 1.5; }
+		.lbl { fill: #e6edf3; font: 600 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+		.sub { fill: #8b949e; font: 400 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.wire { stroke: #484f58; stroke-width: 1.5; fill: none; }
+		.wire-hi { stroke: #3fb950; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+		@keyframes dash { to { stroke-dashoffset: -40; } }
+		.flowing { animation: dash 1.6s linear infinite; }
+		@keyframes glow { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+		.p1 { animation: glow 2s ease-in-out infinite; }
+		.p2 { animation: glow 2s ease-in-out infinite .5s; }
+		.p3 { animation: glow 2s ease-in-out infinite 1s; }
+		.p4 { animation: glow 2s ease-in-out infinite 1.5s; }
+	</style>
+
+	<rect class="bg" x="0" y="0" width="780" height="170" rx="10"/>
+
+	<rect class="box" x="24" y="48" width="140" height="60" rx="8"/>
+	<text class="lbl" x="94" y="74" text-anchor="middle">bun run build</text>
+	<text class="sub" x="94" y="92" text-anchor="middle">vite + adapter</text>
+
+	<rect class="box" x="204" y="48" width="140" height="60" rx="8"/>
+	<text class="lbl" x="274" y="74" text-anchor="middle">.svelte-kit/cloudflare</text>
+	<text class="sub" x="274" y="92" text-anchor="middle">_worker.js + assets</text>
+
+	<rect class="box" x="384" y="48" width="140" height="60" rx="8"/>
+	<text class="lbl" x="454" y="74" text-anchor="middle">wrangler deploy</text>
+	<text class="sub" x="454" y="92" text-anchor="middle">script + bindings</text>
+
+	<rect class="box-ok" x="564" y="48" width="140" height="60" rx="8"/>
+	<text class="lbl" x="634" y="74" text-anchor="middle">Workers edge</text>
+	<text class="sub" x="634" y="92" text-anchor="middle">D1 bound, HTTPS</text>
+
+	<path class="wire" d="M164 78 H204"/><path class="wire-hi flowing" d="M164 78 H204"/>
+	<path class="wire" d="M344 78 H384"/><path class="wire-hi flowing" d="M344 78 H384"/>
+	<path class="wire" d="M524 78 H564"/><path class="wire-hi flowing" d="M524 78 H564"/>
+
+	<circle class="p1" cx="184" cy="78" r="4" fill="#3fb950"/>
+	<circle class="p2" cx="364" cy="78" r="4" fill="#3fb950"/>
+	<circle class="p3" cx="544" cy="78" r="4" fill="#3fb950"/>
+	<circle class="p4" cx="726" cy="78" r="4" fill="#3fb950"/>
+
+	<text class="sub" x="24" y="140">before first deploy: wrangler d1 create · wrangler d1 migrations apply --remote · wrangler secret put BETTER_AUTH_SECRET</text>
+	<text class="sub" x="24" y="158">BETTER_AUTH_URL is left unset on purpose — auth infers the origin per request</text>
+</svg>

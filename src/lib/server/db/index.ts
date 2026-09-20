@@ -4,7 +4,7 @@
  * The binding is per-request (event.platform.env.DB), so there is no
  * module-level db instance — call sites pass the binding in. The full schema
  * (tables + relations) is attached so relational queries and Better Auth's
- * `advanced.database.joins` work (see docs/better-auth-research.md
+ * `advanced.database.joins` work (see docs/research/better-auth.md
  * "Joins").
  */
 

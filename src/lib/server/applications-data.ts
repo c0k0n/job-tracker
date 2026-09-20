@@ -276,6 +276,16 @@ export async function permanentlyDeleteApplication(
 	return result.success;
 }
 
+/** Empty the trash: hard-delete every soft-deleted row for the user.
+ * Side tables cascade. Irreversible. Returns the number of rows purged. */
+export async function permanentlyDeleteAllTrashed(db: Db, userId: string): Promise<number> {
+	const result = await db
+		.delete(application)
+		.where(and(eq(application.userId, userId), isNotNull(application.deletedAt)))
+		.run();
+	return result.meta.changes;
+}
+
 // ---- Interview / Contact CRUD ----
 
 export type CreateInterviewInput = Omit<Interview, 'id' | 'applicationId' | 'createdAt'>;
@@ -366,10 +376,18 @@ export interface StageMoveEvent {
 // ---- Batched dashboard aggregate ----
 
 /**
+ * How far back the velocity chart reads stage moves. Must match the
+ * `windowDays` default of VelocityChart (90) — the chart can't render a
+ * point outside its own window, so reading further back would burn D1 rows
+ * for data that is never drawn.
+ */
+export const STAGE_MOVES_WINDOW_DAYS = 90;
+
+/**
  * One D1 round-trip for the dashboard rollups (list, trash count,
  * upcoming interviews, stage moves). D1's batched statements share a
  * single HTTP session — 4 sequential queries become 1 round-trip
- * (drizzle-research.md "D1's prepared-statement batching").
+ * (docs/research/drizzle.md "D1's prepared-statement batching").
  */
 export async function getDashboardData(
 	db: Db,
@@ -384,6 +402,7 @@ export async function getDashboardData(
 	const now = Date.now();
 	const since = new Date(now - 24 * 60 * 60 * 1000);
 	const until = new Date(now + windowDays * 24 * 60 * 60 * 1000);
+	const movesSince = new Date(now - STAGE_MOVES_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
 	const scope = eq(application.userId, userId);
 	const [activeRows, trashCountRows, interviewRows, moveRows] = await Promise.all([
@@ -415,7 +434,14 @@ export async function getDashboardData(
 			.select({ occurredAt: activityEvent.occurredAt })
 			.from(activityEvent)
 			.innerJoin(application, eq(activityEvent.applicationId, application.id))
-			.where(and(scope, isNull(application.deletedAt), eq(activityEvent.kind, 'stage_changed')))
+			.where(
+				and(
+					scope,
+					isNull(application.deletedAt),
+					eq(activityEvent.kind, 'stage_changed'),
+					gte(activityEvent.occurredAt, movesSince)
+				)
+			)
 			.all()
 	]);
 

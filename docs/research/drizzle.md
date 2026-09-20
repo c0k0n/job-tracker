@@ -207,21 +207,25 @@ export const jobRelations = relations(job, ({ one, many }) => ({
 // Drizzle infers `db.query.jobs.findFirst({ with: { applications: true } })`.
 ```
 
-### v2 (Drizzle 1.0 RC, recommended for new projects)
+### v2 (`defineRelations`) — NOT PUBLISHED, DO NOT USE
+
+The v2 API was announced with the Drizzle 1.0 RC:
 
 ```ts
-import { defineRelations } from 'drizzle-orm';
-export const relations = defineRelations({ job, application, user }, (r) => ({
-  job: {
-    user: r.one.user({ from: r.job.userId, to: r.user.id }),
-    applications: r.many.application({ from: r.job.id, to: r.application.jobId }),
-  },
-}));
+import { defineRelations } from 'drizzle-orm';   // ✗ does not exist in 0.45.2
 ```
 
-`defineRelations` is required to participate in the new "alternation engine" for joined queries. Better Auth's v2 Drizzle adapter emits auth relations with `defineRelationsPart` and you spread it after your own.
+**It does not exist in the installed version.** `drizzle-orm@0.45.2` exports no `defineRelations` and no `defineRelationsPart`; importing either fails at type-check. The "alternation engine" it feeds is likewise unreleased. Any instruction in this file to "use the v2 API from day 1" is stale — the repo is on v1 (`relations()`) and must stay there until 1.0 actually ships and `package.json` is bumped.
 
-**For this project**: we're starting greenfield. Use the v2 API from day 1. The CLI generator (`bunx auth generate`) emits v2-compatible relations automatically.
+```mermaid
+flowchart LR
+    A["drizzle-orm 0.45.2<br/>installed"] --> B{"relations()"}
+    B --> C["db.query.x.findMany<br/>with: {...}"]
+    D["Drizzle 1.0 RC<br/>unreleased"] --> E["defineRelations()"]
+    E -.->|"upgrade path,<br/>not today"| B
+```
+
+**For this project**: v1 `relations()`, unconditionally. If a future `drizzle-orm@1.x` lands, the migration is mechanical — rewrite each `relations(table, ({ one, many }) => …)` block — and should be done in one commit with a fresh `svelte-check` run.
 
 ## Migrations
 
@@ -268,11 +272,11 @@ For ORM-style migrations (Drizzle tracks which SQL files ran), use the local SQL
 
 The repo uses drizzle-kit 0.31's FLAT layout (`db/migrations/0000_name.sql`) with `migrations_pattern: 'db/migrations/*.sql'` — see the correction note at the top of this file. (The nested one-folder-per-migration layout was the unpublished Drizzle 1.0 RC plan.)
 
-## Typed Drizzle (v1 relations v2 + Better Auth + Cloudflare D1)
+## Typed Drizzle (relations v1 + Better Auth + Cloudflare D1)
 
 The full setup path:
 
-1. Define your own schema in `src/lib/server/db/schema.ts` with `defineRelations` from Drizzle 1.0+.
+1. Define your own schema in `src/lib/server/db/schema.ts` using `relations()` from `drizzle-orm` (the v1 API — not `defineRelations`, which is unpublished).
 2. Run `bunx auth@latest generate --adapter drizzle --dialect sqlite` — produces a parallel `auth-schema.ts` you merge in (or re-export everything from one file).
 3. `bunx drizzle-kit generate` — produces migration SQL.
 4. `wrangler d1 create job-tracker` → copy id into `wrangler.jsonc`.
@@ -282,7 +286,7 @@ The full setup path:
 ## Edge cases & gotchas
 
 - **D1 read replicas** (regional) eventually read-after-write inconsistently for a few seconds. If the user creates a job and immediately navigates, the new job may not appear. Use `event.platform.env.DB` (the primary) for write, accept eventual reads.
-- **D1 binding cap**: 10 MB/row, 50K rows/query. Big exports → use `db.batch(...)` and stream.
+- **D1 row cap**: 2 MB per row and 100 kB per statement ([D1 limits](https://developers.cloudflare.com/d1/platform/limits/)). Job descriptions are ~10 kB, so no risk; big exports go through the CSV endpoint, which streams rather than buffering whole rows.
 - **Drizzle relations** when used with `joins: true` in Better Auth need a `many()`/ `one()` per relationship. The generator handles this; if you hand-roll, double-check.
 - **Naming**: use `casing: 'snake_case'` in `drizzle.config.ts` to translate camelCase TS names to snake_case columns. Or just write columns in snake_case and TS in camelCase manually.
 - **Date handling**: SQLite has no native datetime — Drizzle's `mode: 'timestamp'` stores unix seconds. Be aware when reading raw rows.

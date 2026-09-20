@@ -1,9 +1,5 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
-
-	/** `?signedout=1` → show a calm confirmation instead of a bare form. */
-	const justSignedOut = $derived(page.url.searchParams.get('signedout') === '1');
+	import { resolve as resolvePath } from '$app/paths';
 </script>
 
 <svelte:head>
@@ -23,29 +19,18 @@
 	</header>
 	<p class="text-sm text-pretty text-muted sm:text-base">
 		Your account is created and waiting for approval. This tracker is private to a small group, so
-		an existing member has to let you in. You'll get access as soon as they do.
+		an existing member has to let you in.
 	</p>
-	<p class="mt-4 text-sm text-muted">
-		Come back and sign in once approved. This page is safe to close.
-	</p>
+	<p class="mt-4 text-sm text-muted">Once approved, come back and sign in with your email.</p>
+	<p class="mt-2 text-xs text-muted/80">This page is safe to close.</p>
 
 	<div class="mt-8">
-		<form method="POST" action="?/signout" use:enhance>
-			<button
-				type="submit"
-				class="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-			>
-				Sign out of this account
-			</button>
-		</form>
-		<p class="mt-2 text-xs text-muted">
-			Signing out lets you use a different account while you wait for approval.
-		</p>
-		{#if justSignedOut}
-			<p class="mt-3 text-xs text-success" role="status">
-				Signed out. See you when you're approved.
-			</p>
-		{/if}
+		<a
+			href={resolvePath('/')}
+			class="inline-flex items-center justify-center rounded-md border border-border bg-surface px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+		>
+			Back to sign in
+		</a>
 	</div>
 
 	<footer class="mt-10 border-t border-border pt-4 text-xs text-muted">

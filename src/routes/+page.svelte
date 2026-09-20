@@ -181,16 +181,15 @@
 			aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
 			class="space-y-5"
 		>
-			<!-- Email or username -->
+			<!-- Email (signup) / username or email (signin) -->
 			<div class="space-y-1.5">
 				<label for="emailOrUsername" class="block text-sm font-medium text-fg">
-					Username or email
+					{mode === 'signin' ? 'Username or email' : 'Email'}
 				</label>
 				<input
 					id="emailOrUsername"
 					name="emailOrUsername"
-					type="text"
-					inputmode="email"
+					type={mode === 'signin' ? 'text' : 'email'}
 					autocomplete="username"
 					spellcheck="false"
 					autocapitalize="none"
@@ -201,7 +200,7 @@
 					class="w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 					class:border-danger={emailError}
 					disabled={submitting}
-					placeholder="ada or ada@example.com"
+					placeholder={mode === 'signin' ? 'ada or ada@example.com' : 'you@example.com'}
 				/>
 				{#if emailError}
 					<p id="emailOrUsername-error" class="text-sm text-danger" role="alert">
@@ -209,7 +208,9 @@
 					</p>
 				{:else}
 					<p id="emailOrUsername-hint" class="text-xs text-muted">
-						You registered with either. Either works here.
+						{mode === 'signin'
+							? 'You registered with either. Either works here.'
+							: 'You will use this to sign in every time.'}
 					</p>
 				{/if}
 			</div>

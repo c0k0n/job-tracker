@@ -6,8 +6,53 @@
 ## Current state of the platform (mid-2026)
 
 - `workerd` runtime is 1.2026-series. `compatibility_date` is the runtime version pin; pick a recent date and the runtime will activate the matching workerd build. Latest dates seen in docs: `2026-08-28`, `2026-09-03`, `2026-08-25`.
-- `compatibility_flags: ["nodejs_als"]` is enough for SvelteKit + Better Auth + most libs. Use `["nodejs_compat"]` only when a dep needs full Node APIs (e.g. `pg`, `mysql2` for Hyperdrive).
+- `compatibility_flags: ["nodejs_compat"]` is the right default for this stack. Better Auth's official Cloudflare guidance ([Installation → Mount Handler](https://better-auth.com/docs/installation#mount-handler)) says to add `nodejs_compat`; it lists `nodejs_als` only as a narrower fallback for AsyncLocalStorage alone. `nodejs_als` does **not** enable the `node:*` built-ins — it only polyfills `AsyncLocalStorage`. This project ships `nodejs_compat`.
 - The Vite plugin is stable (`@cloudflare/vite-plugin`); `wrangler dev` still works. SvelteKit's `adapter-cloudflare` builds with the Vite plugin by default; you do not need to write `vite.config.ts` Cloudflare plugin yourself.
+
+## Free-tier budget (the ceiling this app is designed against)
+
+Every number below is from the official limits pages ([Workers](https://developers.cloudflare.com/workers/platform/limits/), [D1](https://developers.cloudflare.com/d1/platform/limits/)), not from memory. The app is single-user and read-mostly, so none of these bind in practice — but they decide *how* the data layer is written.
+
+```mermaid
+flowchart LR
+    R["Request in"] --> C{"CPU under 10 ms?"}
+    C -- no --> X1["Exceeded · 1102"]
+    C -- yes --> Q{"under 50 D1<br/>queries?"}
+    Q -- no --> X2["D1 error"]
+    Q -- yes --> S{"under 50<br/>subrequests?"}
+    S -- no --> X3["fetch throws"]
+    S -- yes --> OK["200 OK"]
+    OK --> D{"100k req<br/>today?"}
+    D -- no --> R
+    D -- yes --> X4["Error 1027 until<br/>midnight UTC"]
+```
+
+| Resource | Workers Free | Paid | Where it bites |
+|---|---|---|---|
+| Requests | **100,000 / day** (resets midnight UTC; over → Error 1027) | Included 10 M, then usage | A runaway polling loop. This app has none. |
+| CPU per request | **10 ms** | 5 min (30 s default) | The real constraint. Batched dashboard rollups exist for this. |
+| Memory | 128 MB | 128 MB | Never a factor at this size. |
+| Subrequests / request | **50** | 10,000 | Only relevant if we later fetch an external API per row. |
+| Worker script size | **64 MiB**, uncompressed (no compressed limit) | 65 MiB | `auth.js` (~418 kB) is the biggest chunk; CSS ships as a static asset and does not count. |
+| Worker startup | 1 s (400 ms after 30 s idle) | — | Cold start, not CPU. |
+| Simultaneous connections | 6 | — | Parallel `fetch` fan-out ceiling. |
+| Workers per account | 100 | — | One per environment + previews. |
+| Env vars / Worker | 64 (5 KiB each) | — | Fine. |
+
+| D1 | Free | Paid | Where it bites |
+|---|---|---|---|
+| Databases | 10 | 10 | One is enough. |
+| Max database size | **500 MB** | 10 GB | A 5 GB D1 read a day, forever, stays trivial. |
+| Max storage / account | 5 GB | — | Shared across all databases. |
+| **Queries per Worker invocation** | **50** | 1,000 | **This is the sharpest D1 limit.** `getDashboardData` is one batched aggregate for exactly this reason. |
+| Rows read / written | 5 M read, 100 k written / day | Included + usage | Bounded by the 90-day stage-moves window. |
+| Max SQL statement duration | 30 s | 30 s | Index-backed queries land in ms. |
+| Max row size | 2 MB | 2 MB | Job descriptions are ~10 kB. |
+| Max statement length | 100 kB | 100 kB | Drizzle batches inserts. |
+| Time Travel / backup | 7 days | 30 days | Rollback window. |
+| Simultaneous connections / invocation | 6 | 6 | — |
+
+For which of these actually bind this app, and what the code does about each, see [free-tier-budget.md](../free-tier-budget.md).
 
 ## `wrangler.jsonc` (the project-relevant shape)
 
@@ -17,7 +62,7 @@
   "name": "job-tracker",
   "main": ".svelte-kit/cloudflare/_worker.js",
   "compatibility_date": "2026-08-28",
-  "compatibility_flags": ["nodejs_als"],
+  "compatibility_flags": ["nodejs_compat"],
 
   // 1) Static assets (prebuilt client bundle + prerendered HTML)
   "assets": {
@@ -32,12 +77,11 @@
       "binding": "DB",
       "database_name": "job-tracker",
       "database_id": "<UUID-from-wrangler-d1-create>",
-      // Drizzle-kit 0.31 emits FLAT migration files (migrations/0000_name.sql)
-      // — corrected 2026-09-11, see drizzle-research.md update note. The
-      // nested one-folder-per-migration layout was Drizzle 1.0 RC's
-      // never-published plan. Actual wrangler.jsonc uses "migrations/*.sql".
-      "migrations_dir": "migrations",
-      "migrations_pattern": "migrations/*.sql"
+      // Drizzle-kit 0.31 emits FLAT migration files (migrations/0000_name.sql).
+      // Paths are repo-root-relative and must match the real tree: the
+      // project keeps them under db/, so the pattern is db/migrations/*.sql.
+      "migrations_dir": "db/migrations",
+      "migrations_pattern": "db/migrations/*.sql"
     }
   ],
 
@@ -64,7 +108,9 @@
   },
 
   // 6) Vars (public + private build-time-injected). Secrets go via `wrangler secret put`.
-  "vars": { "BETTER_AUTH_URL": "https://job-tracker.example.com" },
+  // BETTER_AUTH_URL intentionally absent — Better Auth infers it from
+  // request.url. Add it here only to pin auth to a single origin.
+  "vars": {},
 
   // 7) Observability
   "observability": { "enabled": true },
@@ -162,7 +208,7 @@ await env.DB.batch([stmt1, stmt2, stmt3]);
 const dump = await env.DB.dump(); // SQL text — local dev only
 ```
 
-Limits (snapshot): 10 MB row size, 50,000 rows/query, 1,000 batches/query, 1,000 binds/stmt. Good for typical CRUD; for huge scans use D1's `time-travel` (point-in-time recovery, 30 days) and read replicas (announced but check current docs).
+Limits, from the [official D1 limits page](https://developers.cloudflare.com/d1/platform/limits/): **2 MB** max row size, **100 kB** max SQL statement length, **30 s** max query duration, **50 queries per Worker invocation**, **6** simultaneous connections per invocation, Time Travel **7 days** on Free (30 days on Paid). Numbers like "10 MB rows / 50,000 rows per query" float around older docs — treat the page above as authoritative. Good for typical CRUD; for large scans use D1's Time Travel (point-in-time recovery) rather than a homegrown audit table.
 
 ## Durable Objects (DO)
 
@@ -321,9 +367,9 @@ For event/observability data. `env.ANALYTICS.writeDataPoint({ blobs: [...], doub
 
 - **No `fs`**: don't import anything that reads files at runtime. `import.meta.glob` is build-time only.
 - **No `process.env` at runtime**: use `event.platform.env` or `cloudflare:workers.env`. Build-time `import { X } from '$env/static/private'` is fine; reads happen at build, get inlined.
-- **No `node:*` unless `nodejs_compat` is on**: importing `node:fs` or `node:crypto` will fail at runtime. Better Auth's bcrypt (scrypt) uses `node:crypto` — make sure you have either `nodejs_als` (sufficient for `node:crypto` subset) or `nodejs_compat`. As of 2026, `nodejs_als` covers `node:crypto`; the official Better Auth Cloudflare doc says `nodejs_als` is the right minimum.
+- **No `node:*` unless `nodejs_compat` is on**: importing `node:fs` or `node:crypto` fails at runtime without it. `nodejs_als` is *not* a substitute — it polyfills `AsyncLocalStorage` only, not the `node:` built-ins. Better Auth reaches for `node:async_hooks` (dynamic `import()` with a `.catch()` that falls back to `globalThis.AsyncLocalStorage`, so it degrades rather than crashes) and hashes passwords through `@better-auth/utils/password`, which picks `node:crypto` scrypt only under the `node` export condition and otherwise falls back to pure-JS `@noble/hashes`. So it runs either way, but `nodejs_compat` is the documented and safer setting.
 - **Cookie `Secure` flag**: only set automatically in production. For preview URLs (`*.workers.dev`), use HTTPS — they are.
-- **Bundle size**: Workers has a 1 MB compressed limit. SvelteKit's server bundle is around 200-400 KB. Drizzle (~50 KB), Better Auth (~80 KB), Tailwind v4 (CSS is outside the limit; the Vite plugin handles CSS as a separate file). Stay under by code-splitting routes, using `kit.alias` to alias `server-only` modules out of the client graph.
+- **Bundle size**: the Worker script limit is **64 MiB** (raised from the old 1 MiB / 10 MiB tiers — see [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)). Not a practical concern here: the built server bundle is well under it, with `auth.js` (~418 kB) the largest chunk. CSS is served as a static asset, so it never counts against the script size.
 - **`adapter-cloudflare` + remote functions**: `experimental.remoteFunctions: true` must be in `svelte.config.js` (or vite plugin) AND the `compileOptions.experimental.async: true` flag. Plus the `[compilation] section in wrangler.jsonc]` is not needed — adapter handles it.
 
 ## What the job-tracker needs (decision sheet)

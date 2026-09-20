@@ -1,7 +1,7 @@
 # Better Auth 1.7 — research notes
 
 > Sources: Better Auth MCP (`/llms.txt`, v1.7 latest, plus `/docs/integrations/svelte-kit`, `/docs/concepts/{api,session-management,email-password,oauth,database,plugins,rate-limit,email,hooks,client,cookies,cli,typescript,users-accounts}`, `/docs/plugins/{2fa,organization,admin}`, `/docs/reference/options`, `/docs/adapters/drizzle`).
-> Mapped 2026-09-04. The project has no Better Auth installed yet; this is the install-time reference.
+> Mapped 2026-09-04. **Installed**: `better-auth` + `@better-auth/drizzle-adapter` `^1.7.5` (both `devDependencies` — they are bundled into the Worker at build time, so they do not need to be runtime deps). Where this file says "for a fresh project", read it as the shape the repo already follows; see `docs/architecture.md` for what the repo actually ships.
 
 ## Versions & how to choose
 
@@ -389,7 +389,26 @@ SvelteKit specifics: the CLI auto-resolves `$lib` aliases, `$env/*`, `$app/*`, a
 
 ## Rate limiting
 
-- Default: 100 req / 60s in production, off in dev. `sign-in/email` is custom-tighter (3 / 10s). 2FA `verify` is 3 / 10s.
+Defaults, read straight out of the installed `better-auth/dist/context/create-context.mjs`:
+
+```js
+enabled: options.rateLimit?.enabled ?? isProduction,
+window:  options.rateLimit?.window || 10,     // seconds
+max:     options.rateLimit?.max || 100,
+storage: options.rateLimit?.storage || (options.secondaryStorage ? 'secondary-storage' : 'memory')
+```
+
+So: **100 requests per 10-second window**, on in production and off in dev. Not "100 / 60s" — the window is 10 s.
+
+Built-in special rules (`dist/api/rate-limiter/index.mjs → getDefaultSpecialRules()`) override those numbers per path **before** any custom rule runs:
+
+| Path prefix | Window | Max |
+|---|---|---|
+| `/sign-in`, `/sign-up`, `/change-password`, `/change-email` | 10 s | 3 |
+| `/request-password-reset`, `/send-verification-email`, `/forget-password`, `/email-otp/*` | 60 s | 3 |
+| `/two-factor/*` (from the 2FA plugin) | 10 s | 3 |
+
+This repo overrides the global rule to `window: 60, max: 100, storage: 'database'` (see `src/lib/server/auth.ts`); the per-path rules above still win.
 - IP detection: `x-forwarded-for` by default — **don't** trust leftmost in that chain. Point `advanced.ipAddress.ipAddressHeaders: ['cf-connecting-ip']` (or a single trusted header) or list `trustedProxies` IPs and Better Auth walks the chain right-to-left.
 - IPv6: auto-normalizes; per-`/64` subnet by default (override via `advanced.ipAddress.ipv6Subnet`).
 - Storage: `memory` (default), `database` (needs the `rateLimit` table), `secondary-storage`, or `customStorage.consume(key, rule) -> { allowed, retryAfter }` (atomic — Better Auth no longer accepts separate `get`/`set` for rate limits because it's a known race).
@@ -413,11 +432,13 @@ emailAndPassword: {
 
 ## Cloudflare Workers / D1 gotchas (gathered)
 
-- **AsyncLocalStorage**: Better Auth uses `AsyncLocalStorage` for context. Add `"compatibility_flags": ["nodejs_als"]` (or `["nodejs_compat"]` for full Node compat) to `wrangler.jsonc`.
+- **Compatibility flag**: use `"compatibility_flags": ["nodejs_compat"]`. Better Auth's own Cloudflare guidance ([Installation → Mount Handler](https://better-auth.com/docs/installation#mount-handler)) names `nodejs_compat`; `nodejs_als` is listed only as the narrower fallback when AsyncLocalStorage is the *only* thing needed. It is not enough here — see `docs/research/cloudflare.md` for what else the dependency graph reaches for. This project ships `nodejs_compat`.
 - **No `process.env` at runtime**: read secrets from `event.platform.env` or `cloudflare:workers`'s `env` binding. Wire `auth.ts` to read `cloudflare:workers.env.BETTER_AUTH_SECRET` at request time (not module init), or use a thin wrapper that calls `auth.handler(request)` and forwards `env` via `getRequestEvent`.
-- **CLI in CI**: D1 needs programmatic migration (`getMigrations`) since the CLI can't reach the binding. Or use `wrangler d1 migrations apply <DB> --remote` with `migrations_pattern: "migrations/*/migration.sql"`.
+- **CLI in CI**: D1 needs programmatic migration (`getMigrations`) since the CLI can't reach the binding. Or use `wrangler d1 migrations apply <DB> --remote` — this repo's `wrangler.jsonc` sets `migrations_dir: "db/migrations"` and `migrations_pattern: "db/migrations/*.sql"` for drizzle-kit 0.31's flat output.
 - **`asResponse: true` for redirects**: with `asResponse: true`, the function returns a `Response`. SvelteKit needs to forward the `Set-Cookie` header — your server load can return `redirect(res.headers.get('location')!, { setHeaders: { 'set-cookie': ... } })`, or use `sveltekitCookies` plugin which handles this for you.
-- **Trusted origins**: include both the Workers `*.workers.dev` URL and the custom domain if any, plus `http://localhost:5173` for dev. `BETTER_AUTH_URL` must match the request's origin when `baseURL` is not set.
+- **Trusted origins**: `baseURL` is always trusted, so the usual setup needs nothing else. Add the Workers `*.workers.dev` URL and any custom domain only if they differ from `baseURL`. Extra origins come from `DEV_ORIGINS` in this repo — it must stay **empty in production**, since anything listed there is accepted as a valid auth origin. If `baseURL` is left undefined (which this repo now does), Better Auth resolves it per request from
+`request.url` — verified in `better-auth/dist/utils/url.mjs → getBaseURL`. Set `BETTER_AUTH_URL`
+only to pin it to one origin.
 - **Better Auth's `info` command** is the fastest way to file good bug reports — outputs everything in a redacted form.
 
 ## Concrete recipe for the job-tracker
@@ -442,18 +463,33 @@ export const auth = betterAuth({
   baseURL: (() => (env as { BETTER_AUTH_URL?: string }).BETTER_AUTH_URL)(),
   trustedOrigins: [],  // baseURL always trusted; extras via DEV_ORIGINS env (never hardcode localhost — BA docs warning)
   database: drizzleAdapter(db, { provider: 'sqlite', schema }),
-  emailAndPassword: { enabled: true, autoSignIn: true, requireEmailVerification: false },
+  emailAndPassword: { enabled: true, autoSignIn: false, requireEmailVerification: false },
   session: { cookieCache: { enabled: true, maxAge: 300, strategy: 'compact' } },
   advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
-  rateLimit: { enabled: true, storage: 'database', modelName: 'rateLimit' },
-  plugins: [sveltekitCookies(getRequestEvent)],
+	rateLimit: { enabled: true, storage: 'database', modelName: 'rateLimit' },
+	plugins: [sveltekitCookies(getRequestEvent)],
 });
+```
 
 > Note: `secret` and `baseURL` resolvers are invoked at `betterAuth({})` call time (build), not per request. For a Workers deploy where the env is dynamic per isolate, you typically:
-> - Set `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL` as Wrangler **vars** (not secrets — they need to be available at module init).
+> - Set `BETTER_AUTH_SECRET` as a Wrangler **secret** (`wrangler secret put`, or the dashboard's Variables & Secrets). It must never be a plain var, and never committed.
+> - Leave `BETTER_AUTH_URL` **unset** unless you want to pin auth to one origin — Better Auth infers it from `request.url` when it is missing.
 > - OR, expose per-request via a wrapper `fetch` handler that calls `auth.handler(request)` and injects secret into request headers before forwarding.
 
-The cleanest pattern for the SvelteKit on Cloudflare combo: define a request-level secret resolver, or, if your secret lives in a binding, read it through `getRequestEvent()` at the auth call site (e.g. a thin `handle` that resolves `event.platform.env.BETTER_AUTH_SECRET` before delegating). For the initial scaffold, use vars — `wrangler secret put BETTER_AUTH_SECRET` then `vars: { BETTER_AUTH_URL: "https://..." }` in `wrangler.jsonc`.
+
+The cleanest pattern for the SvelteKit on Cloudflare combo: define a request-level secret resolver, or, if your secret lives in a binding, read it through `getRequestEvent()` at the auth call site (e.g. a thin `handle` that resolves `event.platform.env.BETTER_AUTH_SECRET` before delegating). For the initial scaffold: `wrangler secret put BETTER_AUTH_SECRET` (or set it in the dashboard for Workers Builds) and leave `BETTER_AUTH_URL` out of `wrangler.jsonc` entirely.
+
+> **UPDATE 2026-09-12 (verified against installed sign-up.mjs):** this repo
+> ships `autoSignIn: false`. Verified behaviors of that setting:
+> 1. `signUpEmail` returns `{ token: null, user }` and sets NO cookies —
+>   sign-ups never hold a session (the approval queue relies on this).
+> 2. With `autoSignIn === false`, sign-up for an EXISTING email returns a
+>   generic synthetic "created" response (anti-enumeration) instead of
+>   USER_ALREADY_EXISTS — so routes that want a friendly "already has an
+>   account" error must pre-check the email themselves (see
+>   src/routes/+page.server.ts).
+> 3. Sign-in still hands disabled users a session unless gated earlier;
+>   the approval gate must be checked BEFORE calling signInEmail.
 
 ## Schema source-of-truth recommendation
 

@@ -9,6 +9,7 @@ import {
 	getApplicationDetail,
 	getApplicationsForUser,
 	getDashboardData,
+	permanentlyDeleteAllTrashed,
 	permanentlyDeleteApplication,
 	restoreApplication,
 	softDeleteApplication,
@@ -18,6 +19,17 @@ import { computeKpis } from '$lib/utils/kpis';
 import { parseSalaryFromForm } from '$lib/utils/money';
 import { parseFiltersFromUrl, tagFacetsFor } from '$lib/utils/sortFilter';
 import { STAGE_VALUES, STATUS_VALUES, ARRANGEMENT_VALUES } from '$lib/constants/stages';
+
+/**
+ * Enhanced (use:enhance) form posts send `accept: application/json`
+ * (verified in @sveltejs/kit src/runtime/app/forms.js); native posts
+ * send `text/html`. Actions return success data in the enhanced case
+ * so the client updates in place (no goto, no scroll jump, no stuck
+ * modals) and only redirect for the no-JS path.
+ */
+function isEnhanced(request: Request): boolean {
+	return (request.headers.get('accept') ?? '').includes('application/json');
+}
 
 /**
  * Dashboard server load.
@@ -222,6 +234,7 @@ export const actions: Actions = {
 			tags
 		});
 
+		if (isEnhanced(request)) return { operation: 'create', ok: true };
 		throw redirect(303, '/dashboard');
 	},
 
@@ -308,6 +321,7 @@ export const actions: Actions = {
 		});
 		if (!updated) return fail(404, { operation: 'edit', errors: { id: 'Not found.' } });
 
+		if (isEnhanced(request)) return { operation: 'edit', ok: true };
 		throw redirect(303, '/dashboard');
 	},
 
@@ -319,6 +333,7 @@ export const actions: Actions = {
 		if (!id) return fail(400, { operation: 'delete', errors: { id: 'Missing id.' } });
 		const result = await softDeleteApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'delete', errors: { id: 'Not found.' } });
+		if (isEnhanced(request)) return { operation: 'delete', ok: true, id };
 		throw redirect(303, '/dashboard');
 	},
 
@@ -330,6 +345,7 @@ export const actions: Actions = {
 		if (!id) return fail(400, { operation: 'restore', errors: { id: 'Missing id.' } });
 		const result = await restoreApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'restore', errors: { id: 'Not found.' } });
+		if (isEnhanced(request)) return { operation: 'restore', ok: true, id };
 		throw redirect(303, '/dashboard?trash=1');
 	},
 
@@ -341,6 +357,20 @@ export const actions: Actions = {
 		if (!id) return fail(400, { operation: 'purge', errors: { id: 'Missing id.' } });
 		const result = await permanentlyDeleteApplication(db, locals.user.id, id);
 		if (!result) return fail(404, { operation: 'purge', errors: { id: 'Not found.' } });
+		if (isEnhanced(request)) return { operation: 'purge', ok: true, id };
+		throw redirect(303, '/dashboard?trash=1');
+	},
+
+	/**
+	 * Empty the entire trash (hard-delete every soft-deleted row for the
+	 * signed-in user). Irreversible; the UI arms it behind a two-click
+	 * confirm like row-level purge.
+	 */
+	emptyTrash: async ({ request, locals, platform }) => {
+		if (!locals.user) throw redirect(303, '/');
+		const db = getDb(platform!.env.DB);
+		const purged = await permanentlyDeleteAllTrashed(db, locals.user.id);
+		if (isEnhanced(request)) return { operation: 'emptyTrash', ok: true, count: purged };
 		throw redirect(303, '/dashboard?trash=1');
 	},
 
@@ -375,6 +405,7 @@ export const actions: Actions = {
 			outcome: null
 		});
 		if (!result) return fail(404, { operation: 'addInterview', errors: { id: 'Not found.' } });
+		if (isEnhanced(request)) return { operation: 'addInterview', ok: true };
 		throw redirect(303, '/dashboard');
 	},
 
@@ -405,6 +436,7 @@ export const actions: Actions = {
 			notes
 		});
 		if (!result) return fail(404, { operation: 'addContact', errors: { id: 'Not found.' } });
+		if (isEnhanced(request)) return { operation: 'addContact', ok: true };
 		throw redirect(303, '/dashboard');
 	}
 };

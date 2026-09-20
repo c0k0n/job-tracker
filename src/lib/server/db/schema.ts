@@ -1,7 +1,7 @@
 /**
  * Drizzle schema for the job tracker (D1 / SQLite).
  *
- * Conventions (from docs/drizzle-research.md):
+ * Conventions (from docs/research/drizzle.md):
  * - Money as integer minor units (never floats).
  * - Dates as `integer('...', { mode: 'timestamp' })` (unix seconds) at the DB
  *   boundary; the data layer maps to ISO strings for the domain types.
@@ -286,7 +286,7 @@ export const activityEvent = sqliteTable(
 );
 
 // ---------------------------------------------------------------------------
-// Relations (v1 API — drizzle-orm 0.45.2, see drizzle-research.md; the 1.0 RC
+// Relations (v1 API — drizzle-orm 0.45.2, see docs/research/drizzle.md; the 1.0 RC
 // defineRelations API is not published yet, research note updated accordingly)
 // ---------------------------------------------------------------------------
 

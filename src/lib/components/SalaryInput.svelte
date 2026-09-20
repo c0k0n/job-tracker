@@ -25,7 +25,10 @@
 </script>
 
 <fieldset class="space-y-3">
-	<legend class="text-sm font-medium text-fg">Compensation</legend>
+	<legend class="text-sm font-medium text-fg">Salary</legend>
+	<p class="text-xs text-muted">
+		The pay this role offers or targets, if known. Optional — leave it as "Not specified".
+	</p>
 
 	<!-- Hidden inputs to submit values with parent FormData -->
 	<input type="hidden" name="salaryShape" value={shape} />

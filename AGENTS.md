@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Rules for AI agents working in this repo. **docs/ research files are the source of truth for stack behavior**; this file defines how to work, not what the code is. README.md covers project overview and architecture.
+Rules for AI agents working in this repo. **`docs/research/` files are the source of truth for stack behavior**; this file defines how to work, not what the code is. What the code _is_ lives in `docs/` (see [`docs/README.md`](docs/README.md)); README.md covers project overview.
 
 ## Sourcing (binding priority)
 
-1. **`docs/` research files** — sveltekit, better-auth, drizzle, cloudflare, tailwind-v4. Before, during, and after any nontrivial change: read the relevant research file and cross-check the API surface you are using. When research and code disagree, fix the stale one and note it in the research file.
+1. **`docs/research/*.md`** — sveltekit, better-auth, drizzle, cloudflare, tailwind-v4. Before, during, and after any nontrivial change: read the relevant research file and cross-check the API surface you are using. When research and code disagree, fix the stale one and note it in the research file.
 2. **MCP servers** — prefer MCP tools over web fetches/search for any provider that has one wired (Svelte, Better Auth, Cloudflare docs, etc.). MCP output is primary documentation.
 3. **Vendor docs** — official domains only (svelte.dev, better-auth.com, developers.cloudflare.com, tailwindcss.com, orm.drizzle.team). Third-party blogs/Medium/AI-written summaries are never authoritative. If official sources conflict, the more recent / MCP-sourced one wins; flag the conflict in docs/.
 4. **Your own training** — last. "It probably works" is not acceptance; the documented behavior is.
@@ -16,7 +16,7 @@ When a research file is updated (or added), its content binds the next change to
 - **Bun, not npm.** `bun run <script>`; wrangler via `bunx`.
 - **TypeScript only.** No `.js` / `.mjs` / `.cjs` source files (scripts in `db/scripts/` included). `.ts`, `.svelte` with `<script lang="ts">`, generated `.d.ts` only.
 - **Svelte 5 runes-only.** `vite.config.ts` forces `runes: true`. Write `$props()`, `$state()`, `$derived()`, `$effect()` only; legacy `export let` / `$:` fails.
-- **Free-tier Cloudflare Workers only.** No paid add-ons, no Workers Paid, no always-on Durable Objects, no paid R2/KV. Validate any new binding against `docs/cloudflare-research.md` first.
+- **Free-tier Cloudflare Workers only.** No paid add-ons, no Workers Paid, no always-on Durable Objects, no paid R2/KV. Validate any new binding against `docs/research/cloudflare.md` first.
 - **No `svelte.config.js`.** SvelteKit config lives in `vite.config.ts` via `sveltekit({ adapter: adapter() })`.
 - **Tailwind v4 CSS-first.** No `tailwind.config.js`, no PostCSS. All tokens (`@theme` + dark overrides) in `src/routes/layout.css`.
 - **Playwright suites stay outside the repo tree** (`/tmp/pw-tests/`), never committed.
@@ -40,7 +40,7 @@ When a research file is updated (or added), its content binds the next change to
 
 Semantic HTML, accessibility (WCAG 2.2 AA target), security, and performance are first-class — not polish at the end. Code must be short, efficient, readable, trackable: split into components, separation of concerns, no monolithic files. Follow current best practices from the research files — not pre-training habits.
 
-Never patch a file because it "looks fine" or the diff is tiny. Look up the correct modern pattern in research / MCP docs first, even for one-line changes. If unsure, add a research note under `docs/` before editing.
+Never patch a file because it "looks fine" or the diff is tiny. Look up the correct modern pattern in research / MCP docs first, even for one-line changes. If unsure, add a research note under `docs/research/` before editing.
 
 ## UI / UX / design
 

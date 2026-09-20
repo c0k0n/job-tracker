@@ -20,7 +20,7 @@
 4. **Automatic content detection**. v4 walks the project for class names without `content: []` config. Svelte/SvelteKit files are detected. Works for `class="..."` strings, but dynamic class composition must use the `clsx`-compatible `class={[...]}` / `class={{...}}` syntax Svelte 5 supports (Svelte's compiler analyses these too).
 5. **`@theme` defines design tokens that are simultaneously CSS custom properties AND Tailwind utility values**. `--color-primary-500: #...;` creates `bg-primary-500`, `text-primary-500`, `border-primary-500`, plus exposes `var(--color-primary-500)` to plain CSS.
 6. **Container queries are first-class** — `@container`, `@sm:`, `@md:` modifiers work out of the box.
-7. **CSS variable scoping**: tokens are namespaced with `--color-*`, `--font-*`, `--text-*`, `--spacing-*`. If you define `--color-primary` it creates `bg-primary`/`text-primary`/etc. If you want the bare name (e.g. `bg-primary`) without the `--color-` prefix, define `--primary` and it'll be discovered.
+7. **Theme variables must be namespaced** — `--color-*`, `--font-*`, `--text-*`, `--spacing-*`, `--radius-*`, `--shadow-*`, `--animate-*`, `--breakpoint-*`, `--container-*`, `--ease-*`. Only a variable *inside* a namespace generates utilities: `--color-primary: …` yields `bg-primary` / `text-primary` / `border-primary` and also exposes `var(--color-primary)` to plain CSS. A bare `--primary` is **not** discovered — it lands in `:root` as an ordinary custom property with no utility attached. Put non-token variables in `:root`, never in `@theme` ([Theme variable namespaces](https://tailwindcss.com/docs/theme#theme-variable-namespaces)).
 
 ## Current package versions (Sept 2026)
 

@@ -1,3 +1,10 @@
-# allow crawling everything by default
+# Job Tracker is a private, sign-in-gated tool. Nothing behind the auth
+# wall should ever be crawled, and the auth surface itself is not worth
+# indexing. Every authenticated page also sends <meta name="robots"
+# content="noindex">; this file is the belt to that braces.
 User-agent: *
-Disallow:
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /pending-approval
+Disallow: /api/
+Allow: /$

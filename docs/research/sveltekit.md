@@ -273,7 +273,18 @@ Notable `kit` options:
 
 ## `$app/paths`
 
-Static base/asset path resolution. `base`, `assets`. Use when linking to assets that may be served under a subpath.
+Exactly three current exports plus three deprecated ones — verified against `node_modules/@sveltejs/kit/src/runtime/app/paths/public.d.ts` in the installed 2.70.3:
+
+| Export | Status | Use |
+|---|---|---|
+| `resolve(path, params?)` | **current** | Build an app-relative URL respecting `config.kit.paths.base`. Aliased to `resolvePath` at every import site in this repo, because AGENTS.md requires `goto()`/hrefs to be base-aware. |
+| `asset(path)` | **current** | Prefix an asset with `config.kit.paths.assets`. |
+| `match(pathname, routes?)` | **current** | Resolve a URL to a route id + params. |
+| `base` | deprecated | Use `resolve()` instead. |
+| `assets` | deprecated | Use `asset()` instead. |
+| `resolveRoute()` | deprecated | Use `resolve()` instead. |
+
+There is **no `resolvePath` export** — `import { resolve as resolvePath } from '$app/paths'` is a local alias, not a named export.
 
 ## `kit/types` — generated `./$types`
 
@@ -314,13 +325,13 @@ adapter({
   "name": "job-tracker",
   "main": ".svelte-kit/cloudflare/_worker.js",
   "compatibility_date": "2026-08-28",
-  "compatibility_flags": ["nodejs_als"],
+  "compatibility_flags": ["nodejs_compat"],
   "assets": { "binding": "ASSETS", "directory": ".svelte-kit/cloudflare" },
   "observability": { "enabled": true }
 }
 ```
 
-> Add `compatibility_flags: ["nodejs_compat"]` only if a runtime dep actually needs Node APIs (some Better Auth deps, certain KV/R2 features). For Better Auth + D1, `nodejs_als` is enough.
+> **`nodejs_compat`, not `nodejs_als`.** `nodejs_als` polyfills `AsyncLocalStorage` and nothing else — it does not unlock the `node:*` built-ins. Better Auth's own Cloudflare guidance ([Installation → Mount Handler](https://better-auth.com/docs/installation#mount-handler)) says `nodejs_compat`, listing `nodejs_als` only as the narrower fallback. This project needs the full flag because `better-auth` reaches for `node:async_hooks` and `@better-auth/utils/password` reaches for `node:crypto` scrypt under the `node` export condition.
 
 ### `App.Platform` access
 
@@ -571,14 +582,14 @@ import { mount, unmount, hydrate, render, tick, flushSync, createSubscriber } fr
 
 - Don't `import { env } from '$env/dynamic/private'` in modules that the worker also evaluates during build/prerender — the build-time `event` won't be there. Prefer `$env/static/*` for static secrets.
 - `platform.env` is only available server-side. For client side, use `$env/static/public` (compiled into the bundle).
-- Cookie `secure` flag: production-only by default. For preview URLs, ensure `BETTER_AUTH_URL` is `https://`.
-- `compatibility_date` must be recent (≥ 2024-09-23 for `nodejs_als`).
+- Cookie `secure` flag: production-only by default. Preview and `workers.dev` URLs are already HTTPS, and because `BETTER_AUTH_URL` is left unset the inferred origin is correct on both.
+- `compatibility_date` must be recent (≥ 2024-09-23 for `nodejs_compat`; this project pins `2026-08-28`).
 - D1 binding is read from `event.platform.env.DB`; in `+page.server.ts`/`+server.ts` use `platform.env`. In `+page.ts` (universal) only `fetch` works — go via a `+server.ts` proxy or remote function.
 - `wrangler types --check` regenerates `worker-configuration.d.ts`. If you change bindings, rerun.
 
 ## Quick checklist for the job-tracker
 
-- [ ] `wrangler.jsonc` with `assets`, `observability`, `nodejs_als`, D1 binding `DB`.
+- [ ] `wrangler.jsonc` with `assets`, `observability`, `nodejs_compat`, D1 binding `DB`.
 - [ ] `src/app.d.ts` declares `App.Platform.env` typed via `worker-configuration.d.ts`.
 - [ ] `src/hooks.server.ts` mounts Better Auth `svelteKitHandler` and populates `event.locals.session/user`.
 - [ ] `src/routes/api/auth/[...all]/+server.ts` if not using the `svelteKitHandler` only (the handler does the catch-all already).

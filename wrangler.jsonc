@@ -2,8 +2,12 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "job-tracker",
 	"compatibility_date": "2026-08-28",
-	// Minimum Better Auth needs on Workers: AsyncLocalStorage for request context.
-	"compatibility_flags": ["nodejs_als"],
+	// Better Auth needs Node runtime APIs on Workers (AsyncLocalStorage for
+	// request context, plus `node:crypto`/`node:buffer` shims its deps reach
+	// for). Its official Cloudflare guidance is `nodejs_compat`; `nodejs_als`
+	// is only the narrower fallback for AsyncLocalStorage alone.
+	// See docs/research/better-auth.md.
+	"compatibility_flags": ["nodejs_compat"],
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"assets": {
 		"binding": "ASSETS",
@@ -13,6 +17,10 @@
 		{
 			"binding": "DB",
 			"database_name": "job-tracker",
+			// This id does not exist yet — no D1 database has been created on
+			// the account. Run `wrangler d1 create job-tracker` and paste the
+			// id it prints, or every --remote command fails with code 7404.
+			// See docs/deployment.md step 3.
 			"database_id": "74664605-5d21-4a7a-a348-c20eab7edd1c",
 			// Drizzle owns migrations (drizzle-kit generate emits flat
 			// migrations/NNNN_name.sql files in 0.4x; the nested per-folder
@@ -24,10 +32,19 @@
 	// Non-secret config. BETTER_AUTH_SECRET is a `wrangler secret put` value,
 	// never committed.
 	"vars": {
-		"BETTER_AUTH_URL": "http://localhost:5173",
-		// Extra trusted auth origins for alternate local ports. Empty in prod
-		// (prod trusts only BETTER_AUTH_URL). See auth.ts trustedOrigins.
-		"DEV_ORIGINS": "http://localhost:5173"
+		// Intentionally absent: BETTER_AUTH_URL. When it is unset, Better Auth
+		// derives the base URL from each request's own origin, so the same
+		// build works locally and at
+		// https://job-tracker.sanctum.workers.dev with no per-environment
+		// config. Set it as a runtime variable only if you want to pin auth to
+		// exactly one origin. See docs/deployment.md.
+		// Extra trusted auth origins (comma-separated), for local ports other
+		// than the one the dev server serves on. MUST stay empty in production —
+		// anything listed here is accepted as a valid auth origin, so a
+		// leftover localhost entry would let a local page forge requests.
+		// baseURL is always trusted, so the default local setup needs nothing.
+		// See auth.ts trustedOrigins.
+		"DEV_ORIGINS": ""
 	},
 	"workers_dev": true,
 	"preview_urls": true,

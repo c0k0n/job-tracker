@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 230" width="780" height="230" role="img" aria-label="Approval gate state machine">
+	<title>Approval gate</title>
+	<style>
+		.bg { fill: #0d1117; }
+		.box { fill: #161b22; stroke: #30363d; stroke-width: 1.5; }
+		.amber { fill: #161b22; stroke: #d29922; stroke-width: 1.5; }
+		.green { fill: #161b22; stroke: #3fb950; stroke-width: 1.5; }
+		.red { fill: #161b22; stroke: #f85149; stroke-width: 1.5; }
+		.lbl { fill: #e6edf3; font: 600 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+		.sub { fill: #8b949e; font: 400 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.edge { fill: #8b949e; font: 400 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.wire { stroke: #484f58; stroke-width: 1.5; fill: none; }
+		.wire-g { stroke: #3fb950; stroke-width: 2; fill: none; }
+		.wire-r { stroke: #f85149; stroke-width: 2; fill: none; }
+		@keyframes glow { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+		.p { animation: glow 2.2s ease-in-out infinite; }
+		@keyframes dash { to { stroke-dashoffset: -30; } }
+		.f { animation: dash 1.4s linear infinite; stroke-dasharray: 5 5; }
+	</style>
+
+	<rect class="bg" x="0" y="0" width="780" height="230" rx="10"/>
+
+	<rect class="box" x="24" y="90" width="130" height="52" rx="8"/>
+	<text class="lbl" x="89" y="113" text-anchor="middle">sign up</text>
+	<text class="sub" x="89" y="131" text-anchor="middle">disabled: true</text>
+
+	<rect class="amber" x="196" y="90" width="150" height="52" rx="8"/>
+	<text class="lbl" x="271" y="113" text-anchor="middle">pending</text>
+	<text class="sub" x="271" y="131" text-anchor="middle">/pending-approval</text>
+
+	<rect class="green" x="388" y="90" width="150" height="52" rx="8"/>
+	<text class="lbl" x="463" y="113" text-anchor="middle">approved</text>
+	<text class="sub" x="463" y="131" text-anchor="middle">disabled: false</text>
+
+	<rect class="red" x="580" y="90" width="130" height="52" rx="8"/>
+	<text class="lbl" x="645" y="113" text-anchor="middle">rejected</text>
+	<text class="sub" x="645" y="131" text-anchor="middle">row deleted</text>
+
+	<path class="wire" d="M154 116 H196"/>
+	<path class="wire-g f" d="M346 116 H388"/>
+	<path class="wire-r" d="M538 116 H580"/>
+
+	<circle class="p" cx="175" cy="116" r="4" fill="#58a6ff"/>
+	<circle class="p" cx="367" cy="116" r="4" fill="#3fb950"/>
+	<circle class="p" cx="559" cy="116" r="4" fill="#f85149"/>
+
+	<text class="edge" x="200" y="104">no session issued</text>
+	<text class="edge" x="392" y="104">admin approves</text>
+	<text class="edge" x="584" y="104">admin rejects</text>
+
+	<rect class="box" x="24" y="24" width="686" height="42" rx="8"/>
+	<text class="lbl" x="42" y="43">first user ever to sign up bootstraps as approved admin</text>
+	<text class="sub" x="42" y="60">databaseHooks.user.create.before · everyone after that needs the queue</text>
+
+	<text class="sub" x="24" y="184">sign-in pre-checks disabled BEFORE calling signInEmail, so a pending user never gets a cookie</text>
+	<text class="sub" x="24" y="204">a stale cookie from the old flow is revoked in hooks.server.ts (self-heal) — see docs/auth.md</text>
+</svg>

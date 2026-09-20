@@ -88,12 +88,13 @@
 	});
 
 	// Server-side validation results from the create/edit actions surface
-	// here via `page.form` (progressive enhancement keeps the modal open so
-	// the user can fix the highlighted fields). Only forward a result that
-	// matches the create form.
+	// here via `pageStore.form` (progressive enhancement keeps the modal open
+	// so the user can fix the highlighted fields). Only failure payloads are
+	// forwarded — successes carry no `errors` and the modal is closed by the
+	// form's onsuccess callback, so forwarding one would re-open a busy form.
 	const formResult = $derived(pageStore.form);
 	const newAppForm = $derived(
-		formResult && formResult.operation === 'create'
+		formResult && formResult.operation === 'create' && formResult.errors
 			? formResult
 			: { values: undefined, errors: undefined, operation: undefined }
 	);
@@ -151,14 +152,22 @@
 		resumeOpen = true;
 	}
 
+	// Trash view: two-click "empty trash" confirm. Local only — one armed
+	// state for the whole header, mirroring the row-level pattern.
+	let confirmEmptyTrash = $state(false);
+
 	// Trash view toggle: a real navigation (different row set from the
-	// server load), so it stays an <a href>.
 	const trashHref = $derived(resolvePath(data.trashView ? '/dashboard' : '/dashboard?trash=1'));
 	const trashLabel = $derived(data.trashView ? 'Active' : 'Trash');
 
 	// Any modal open → background must be inert so screen readers and the
 	// Tab key can't reach behind the dialog.
 	const anyModalOpen = $derived(detailOpen || newAppOpen || resumeOpen);
+
+	// `username` is nullable (rows created before the username plugin, or
+	// accounts where it was never set), so fall back through name → email →
+	// a neutral greeting rather than rendering "Welcome back, .".
+	const greeting = $derived(data.user.username ?? data.user.name ?? data.user.email ?? 'there');
 
 	// THE single URL writer: local truth → query string + typed page.state
 	// via shallow routing. The guard compares against window.location (the
@@ -204,7 +213,7 @@
 				{data.trashView ? 'Trash' : 'Dashboard'}
 			</h1>
 			<p class="mt-1 text-sm text-pretty text-muted">
-				Welcome back, {data.user.username}.
+				Welcome back, {greeting}.
 			</p>
 		</div>
 		<!-- Actions live in the Applications section header, not here.
@@ -323,12 +332,14 @@
 					size="sm"
 					onclick={openResume}
 					ariaLabel="Open resume library"
+					title="Browse, preview, and upload your saved resumes"
 				>
 					Resumes
 				</Button>
 				<a
 					href={resolvePath('/dashboard/export.csv')}
 					download
+					title="Download all your applications as a spreadsheet"
 					class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 				>
 					Export CSV
@@ -336,13 +347,55 @@
 				{#if data.isAdmin}
 					<a
 						href={resolvePath('/admin/approvals')}
+						title="Approve or reject new sign-ups"
 						class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 					>
 						Admin queue
 					</a>
 				{/if}
+				{#if data.trashView && data.applications.length > 0}
+					{#if confirmEmptyTrash}
+						<form method="POST" action="?/emptyTrash" use:enhance class="contents">
+							<Button
+								type="submit"
+								variant="danger"
+								size="sm"
+								ariaLabel="Confirm empty trash"
+								title="Permanently delete every application in the trash"
+							>
+								Delete all {data.applications.length} for good
+							</Button>
+						</form>
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							onclick={() => (confirmEmptyTrash = false)}
+							ariaLabel="Cancel empty trash"
+						>
+							Cancel
+						</Button>
+					{:else}
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							onclick={() => (confirmEmptyTrash = true)}
+							ariaLabel="Empty trash"
+							title="Permanently delete everything in the trash at once"
+						>
+							Empty trash
+						</Button>
+					{/if}
+				{/if}
 				{#if !data.trashView && hasApplications}
-					<Button variant="primary" size="sm" onclick={openNewApp} ariaLabel="Add new application">
+					<Button
+						variant="primary"
+						size="sm"
+						onclick={openNewApp}
+						ariaLabel="Add new application"
+						title="Track a new job application"
+					>
 						+ Add application
 					</Button>
 				{/if}
@@ -425,5 +478,5 @@
 	subtitle="Track a new job application."
 	size="lg"
 >
-	<ApplicationForm create result={newAppForm} />
+	<ApplicationForm create result={newAppForm} onsuccess={() => (newAppOpen = false)} />
 </Modal>
