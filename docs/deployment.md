@@ -118,10 +118,15 @@ runtime — that is a separate screen.
 | `BETTER_AUTH_URL` | no | Leave unset — see below |
 | `DEV_ORIGINS` | no | Must stay empty in production |
 
-**`BETTER_AUTH_URL` is deliberately not set.** When it is unset, Better Auth derives the base URL
-from each request's own origin (`better-auth/dist/utils/url.mjs → getBaseURL`), so one build works
-on `http://localhost:5173` and `https://job-tracker.sanctum.workers.dev` alike. Pin it only if you
-want auth locked to exactly one origin.
+**`BETTER_AUTH_URL` is deliberately not set.** When it is unset, `auth.ts` uses Better Auth's
+dynamic baseURL object form: the origin is resolved per request and validated against
+`allowedHosts`, so one build works on `http://localhost:5173` and
+`https://job-tracker.sanctum.workers.dev` alike — but a host that is not listed is rejected
+instead of silently trusted. Pin it only if you want auth locked to exactly one origin.
+
+That list lives in `src/lib/server/auth.ts`. If you put this app behind a **custom domain**, add
+that host to it, or every auth call will 500 with `Host "…" is not in the allowed hosts list`.
+Full reasoning in [docs/auth.md](auth.md#base-url).
 
 ## After it is live
 
@@ -187,7 +192,8 @@ SQL will not be applied until it lands on `main`.
 | Upload rejected with 415 | The file is not really a PDF | Only files whose first bytes are `%PDF-` are accepted, whatever their name says |
 | Build fails immediately with a name error | Dashboard Worker name ≠ `name` in `wrangler.jsonc` | Rename one to match (`job-tracker`) |
 | Deploy succeeds but every page 500s | `BETTER_AUTH_SECRET` missing | Add it under **Variables & Secrets** |
-| Auth works locally, fails in prod | `BETTER_AUTH_URL` pinned to localhost | Unset it; it is now inferred per request |
+| Auth works locally, fails in prod | `BETTER_AUTH_URL` pinned to localhost | Unset it; the dynamic baseURL resolves the origin per request |
+| Every auth call 500s, log says `Host "…" is not in the allowed hosts list` | You are reaching the worker on a host not in `allowedHosts` | Add the host to `ALLOWED_HOSTS` in `src/lib/server/auth.ts`, or set `DEV_ORIGINS` (a custom domain is the usual cause) |
 | New tables missing in prod | Migrations not run | `db:migrate:remote` is in the deploy command — check the build log |
 | `bun: command not found` in build | Bun missing or renamed | Set build variable `BUN_VERSION` |
 | Sign-in or sign-up returns **1102**, but page loads are fine | The password hash costs more CPU than the free tier allows | Read [free-tier-budget.md](free-tier-budget.md#the-one-request-that-does-not-fit-sign-in) before changing anything |

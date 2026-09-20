@@ -30,6 +30,7 @@ Three things about this arrangement are load-bearing:
 
 | Option | Value | Reason |
 |---|---|---|
+| `baseURL` | `{ allowedHosts, protocol: 'auto' }`, or a pinned string when `BETTER_AUTH_URL` is set | Per-request origin, validated against an allowlist. See [Base URL](#base-url) |
 | `user.additionalFields.disabled` | `{ type: 'boolean', input: false, defaultValue: true }` | `input: false` makes it server-owned — a crafted POST cannot set it |
 | `emailAndPassword.autoSignIn` | `false` | Sign-up returns `{ token: null, user }`. No cookie, so an unapproved user cannot be half-signed-in |
 | `emailAndPassword.requireEmailVerification` | `false` | No mail sender is wired up yet |
@@ -41,6 +42,58 @@ Three things about this arrangement are load-bearing:
 | `rateLimit` | `window: 60, max: 100, storage: 'database'` | Memory storage is decorative on Workers — isolates reset between requests |
 | `plugins` | `admin()`, `username()`, `sveltekitCookies()` | Role checks, username sign-in, cookie plumbing |
 | `username()` validation | `/^[a-zA-Z0-9_.]+$/`, length 3–30 | Better Auth defaults (`defaultUsernameValidator`), not overridden — see [Sign-in handles](#sign-in-handles) |
+
+## Base URL
+
+There is no `BETTER_AUTH_URL` in `wrangler.jsonc`, and that is deliberate — but it is not the same
+thing as leaving `baseURL` unset. Left unset, Better Auth logs this on every request:
+
+```
+WARN [Better Auth]: [better-auth] Base URL is not set. Set the baseURL option or
+BETTER_AUTH_URL env, or use a dynamic baseURL with allowedHosts for multi-host setups.
+Without it the origin is derived from the incoming request, and callbacks and redirects
+may not work correctly.
+```
+
+The warning is not cosmetic. The docs put it plainly: *"Relying on request inference is not
+recommended."* With `baseURL` undefined, whatever `Host` header arrives becomes the origin **and**
+a trusted origin — there is no allowlist at all.
+
+So `auth.ts` uses the object form instead, which keeps the per-request behaviour we want and adds
+validation:
+
+```mermaid
+flowchart LR
+    A["request Host header"] --> B{"matches<br/>allowedHosts?"}
+    B -- yes --> C["baseURL = that host"]
+    B -- no --> D["throw — no fallback<br/>names the rejected host"]
+```
+
+| Host pattern | Why it is there |
+|---|---|
+| `job-tracker.sanctum.workers.dev` | The deployed origin |
+| `*.workers.dev` | Workers Builds preview branches get a generated host under the same domain |
+| `localhost:*`, `127.0.0.1:*` | `bun run dev` (5173) and `bun run preview` (8787) with zero config. `*` covers the port |
+| hosts derived from `DEV_ORIGINS` | Anything else — e.g. a LAN IP for testing on your phone |
+
+Two things this buys over the old setup. An unlisted host is **rejected** rather than trusted (it
+returns 500 and logs the host plus the fix, which is the right shape for a config mistake). And
+loopback being in the list is still strictly narrower than before, where *every* host was
+accepted.
+
+**The gotcha that bites when you switch to this form:** a direct `auth.api.*` call has no request
+of its own, so there is nothing to read a `Host` from. Without it you get
+`Dynamic baseURL could not be resolved for this direct auth.api call`. Every direct call in this
+repo therefore passes `headers`:
+
+```ts
+await auth.api.signInEmail({ headers: request.headers, body: { email, password } });
+```
+
+That applies to `signInEmail` and `signUpEmail` in `src/routes/+page.server.ts`, and to the three
+calls that already took headers (`getSession` and `signOut` in `hooks.server.ts`, `signOut` in the
+dashboard action). If you add another `auth.api` call, pass `headers` or it will fail at runtime
+rather than at typecheck.
 
 ## The four gates
 

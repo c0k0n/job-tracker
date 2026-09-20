@@ -182,6 +182,12 @@ export const actions: Actions = {
 			// guard for the same reason.
 			try {
 				await auth.api.signUpEmail({
+					// `headers` is load-bearing, not decoration. The dynamic
+					// baseURL config resolves the origin from the request, and
+					// a direct auth.api call has no request of its own —
+					// without headers carrying a Host it throws
+					// "Dynamic baseURL could not be resolved".
+					headers: request.headers,
 					body: {
 						email: emailOrUsername,
 						name: handle ?? emailOrUsername.split('@')[0]!,
@@ -258,7 +264,9 @@ export const actions: Actions = {
 		}
 
 		try {
-			await auth.api.signInEmail({ body: { email, password } });
+			// headers → see the note on signUpEmail above: the dynamic
+			// baseURL config needs a Host to resolve the origin.
+			await auth.api.signInEmail({ headers: request.headers, body: { email, password } });
 		} catch (err) {
 			// Map Better Auth APIError statuses to human copy. `status` /
 			// `statusCode` confirmed on APIError from the installed

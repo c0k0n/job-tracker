@@ -85,8 +85,10 @@ Create `.dev.vars` in the repo root (gitignored) with your local secrets:
 BETTER_AUTH_SECRET=<random string — openssl rand -hex 32>
 ```
 
-That is the only value you need. `BETTER_AUTH_URL` is intentionally left unset — auth derives its
-base URL from each request's own origin, so local and deployed builds need no per-environment URL.
+That is the only value you need. `BETTER_AUTH_URL` is intentionally left unset — auth resolves its
+base URL per request from an allowlist of hosts (`job-tracker.sanctum.workers.dev`, `*.workers.dev`,
+`localhost:*`, `127.0.0.1:*`, plus anything in `DEV_ORIGINS`), so one build works locally and
+deployed with no per-environment URL. See [docs/auth.md](docs/auth.md#base-url).
 
 Or copy `.dev.vars.example`. Then:
 
@@ -137,9 +139,9 @@ The short version of the one-time setup:
 Both Cloudflare resources already exist on the account and are already in `wrangler.jsonc`, so
 step 1 is only there in case you start over.
 
-There is no `BETTER_AUTH_URL` to set. It is left unset on purpose so Better Auth derives the base
-URL from each request's own origin — the same build works on `localhost:5173` and on the deployed
-`workers.dev` URL.
+There is no `BETTER_AUTH_URL` to set. It is left unset on purpose: Better Auth resolves the base
+URL per request against an `allowedHosts` list, so the same build works on `localhost:5173` and on
+the deployed `workers.dev` URL. Setting it pins auth to one origin and throws that away.
 
 ## Tests
 

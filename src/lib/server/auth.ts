@@ -43,6 +43,46 @@ export type SessionUser = {
 
 export type AuthInstance = ReturnType<typeof buildAuth>;
 
+/**
+ * Hosts Better Auth will accept as the request origin when `BETTER_AUTH_URL`
+ * is unset.
+ *
+ * Better Auth 1.7 warns on every request if `baseURL` is left undefined, and
+ * the docs are blunt about why: "Relying on request inference is not
+ * recommended." Inference trusts *whatever* `Host` header arrives — every
+ * origin is a trusted origin. The object form keeps the per-request
+ * behaviour we want (one build for localhost and for workers.dev) but adds an
+ * allowlist: a host that is not listed is rejected instead of trusted.
+ *
+ * - the deployed host: `job-tracker.sanctum.workers.dev`
+ * - `*.workers.dev`: Workers Builds preview branches get a generated host
+ *   under the same domain. Without this, a preview deploy would throw on
+ *   every auth call.
+ * - `localhost:*` / `127.0.0.1:*`: `bun run dev` (5173) and `bun run preview`
+ *   (8787) must work with no config. `*` covers the port.
+ *
+ * Note this is still stricter than the old behaviour even with loopback in
+ * it. Loopback is trusted in production only in the narrow sense that a page
+ * served from the user's own machine can talk to the deployed auth API;
+ * nothing else is. Anything you need beyond these — a LAN IP for testing on
+ * your phone, say — goes in `DEV_ORIGINS`, which is folded in below.
+ */
+const ALLOWED_HOSTS = [
+	'job-tracker.sanctum.workers.dev',
+	'*.workers.dev',
+	'localhost:*',
+	'127.0.0.1:*'
+];
+
+/** `http://localhost:8787` → `localhost:8787`. Unparseable input → null. */
+function hostOf(origin: string): string | null {
+	try {
+		return new URL(origin).host || null;
+	} catch {
+		return null;
+	}
+}
+
 function buildAuth(env: Env) {
 	// `vars` in wrangler.jsonc are typed as their literal values, so an empty
 	// DEV_ORIGINS is the type `""` — and a truthiness check on `""` collapses
@@ -50,30 +90,47 @@ function buildAuth(env: Env) {
 	// at runtime it is whatever the environment actually holds (a real dev
 	// override is a non-empty comma-separated list).
 	const devOrigins: string = env.DEV_ORIGINS;
+	const extraOrigins = devOrigins
+		.split(',')
+		.map((o) => o.trim())
+		.filter(Boolean);
 
 	return betterAuth({
 		appName: 'Job Tracker',
 		secret: env.BETTER_AUTH_SECRET,
-		// Leave baseURL undefined unless BETTER_AUTH_URL is set. When it is
-		// undefined, Better Auth resolves it per request from the request
-		// origin (verified in better-auth/dist/utils/url.mjs → getBaseURL:
-		// `if (request) { const url = getOrigin(request.url); ... }`).
-		// That means the same build works on http://localhost:5173 and on
-		// https://job-tracker.sanctum.workers.dev with no per-environment
-		// config — and it removes the whole class of bug where a localhost
-		// URL ships to production and every auth call gets rejected.
-		// Set BETTER_AUTH_URL only to pin it to one origin.
-		baseURL: env.BETTER_AUTH_URL || undefined,
+		// Two shapes, deliberately:
+		//
+		// BETTER_AUTH_URL set  → that string, pinned. Use it only to force a
+		// single origin; it costs you the "same build everywhere" property.
+		//
+		// BETTER_AUTH_URL unset → the dynamic object. Better Auth reads the
+		// host per request and validates it against `allowedHosts`, so one
+		// build still works on http://localhost:5173, on the wrangler dev
+		// port, and on https://job-tracker.sanctum.workers.dev — but an
+		// unlisted host is rejected rather than silently trusted. That is
+		// what silences the "Base URL is not set" warning: the warning fires
+		// only when baseURL resolves to nothing (see
+		// better-auth/dist/context/create-context.mjs).
+		//
+		// No `fallback` on purpose. An unknown host should fail loudly,
+		// pointing at the host that was rejected, not quietly pretend to be
+		// production.
+		baseURL: env.BETTER_AUTH_URL
+			? env.BETTER_AUTH_URL
+			: {
+					allowedHosts: [
+						...ALLOWED_HOSTS,
+						...extraOrigins.map(hostOf).filter((h): h is string => h !== null)
+					],
+					protocol: 'auto'
+				},
 		// baseURL is always trusted; extra dev origins come from an optional
-		// DEV_ORIGINS var (comma-separated). Never hardcode localhost here —
-		// Better Auth docs: "Do not leave the localhost origin in a trusted
-		// origins list of a production auth instance."
-		trustedOrigins: devOrigins
-			? devOrigins
-					.split(',')
-					.map((o) => o.trim())
-					.filter(Boolean)
-			: [],
+		// DEV_ORIGINS var (comma-separated). The dynamic config already adds
+		// an http+https origin for every allowed host, so this only needs the
+		// literal entries. Never hardcode localhost here — Better Auth docs:
+		// "Do not leave the localhost origin in a trusted origins list of a
+		// production auth instance."
+		trustedOrigins: extraOrigins,
 		database: drizzleAdapter(getDb(env.DB), {
 			provider: 'sqlite',
 			// `import * as schema` carries tables AND their relations exports;

@@ -436,9 +436,27 @@ emailAndPassword: {
 - **No `process.env` at runtime**: read secrets from `event.platform.env` or `cloudflare:workers`'s `env` binding. Wire `auth.ts` to read `cloudflare:workers.env.BETTER_AUTH_SECRET` at request time (not module init), or use a thin wrapper that calls `auth.handler(request)` and forwards `env` via `getRequestEvent`.
 - **CLI in CI**: D1 needs programmatic migration (`getMigrations`) since the CLI can't reach the binding. Or use `wrangler d1 migrations apply <DB> --remote` — this repo's `wrangler.jsonc` sets `migrations_dir: "db/migrations"` and `migrations_pattern: "db/migrations/*.sql"` for drizzle-kit 0.31's flat output.
 - **`asResponse: true` for redirects**: with `asResponse: true`, the function returns a `Response`. SvelteKit needs to forward the `Set-Cookie` header — your server load can return `redirect(res.headers.get('location')!, { setHeaders: { 'set-cookie': ... } })`, or use `sveltekitCookies` plugin which handles this for you.
-- **Trusted origins**: `baseURL` is always trusted, so the usual setup needs nothing else. Add the Workers `*.workers.dev` URL and any custom domain only if they differ from `baseURL`. Extra origins come from `DEV_ORIGINS` in this repo — it must stay **empty in production**, since anything listed there is accepted as a valid auth origin. If `baseURL` is left undefined (which this repo now does), Better Auth resolves it per request from
-`request.url` — verified in `better-auth/dist/utils/url.mjs → getBaseURL`. Set `BETTER_AUTH_URL`
-only to pin it to one origin.
+- **Trusted origins**: `baseURL` is always trusted, so the usual setup needs nothing else. Add the Workers `*.workers.dev` URL and any custom domain only if they differ from `baseURL`. Extra origins come from `DEV_ORIGINS` in this repo — it must stay **empty in production**, since anything listed there is accepted as a valid auth origin.
+- **Base URL — prefer the dynamic object over leaving it undefined** (verified in Better Auth 1.7.5, `better-auth/dist/context/create-context.mjs:65` and `dist/utils/url.mjs`):
+
+  Leaving `baseURL` undefined logs `WARN [Better Auth]: [better-auth] Base URL is not set…` on every request. The [options reference](https://better-auth.com/docs/reference/options#baseurl) warns: *"Relying on request inference is not recommended. For security and stability, always set `baseURL` explicitly in your config or via the `BETTER_AUTH_URL` environment variable."* The reason is that with no `baseURL`, whatever `Host` arrives is both the origin and a trusted origin — no allowlist.
+
+  The object form keeps per-request resolution and adds validation:
+
+  ```ts
+  baseURL: { allowedHosts: ['myapp.com', '*.workers.dev', 'localhost:*'], protocol: 'auto' }
+  ```
+
+  Verified behaviours from the installed source:
+
+  - `allowedHosts` may be exact (`myapp.com`), wildcard (`*.vercel.app`, `preview-*.myapp.com`), or port-wildcard (`localhost:*`). Matching is `matchesHostPattern` in `dist/utils/url.mjs`. Non-empty is enforced — an empty array throws at construction.
+  - Host is read from the `host` header (which **includes the port**), falling back to the request URL. `x-forwarded-host` is ignored unless `advanced.trustedProxyHeaders: true`.
+  - `protocol: 'auto'` picks `http` for loopback hosts and `https` otherwise.
+  - **No `fallback` means an unlisted host throws**, not falls back: `Host "…" is not in the allowed hosts list. Allowed hosts: …`. With `fallback` set, unknown hosts silently resolve to it — the docs warn this "can hide deployment or proxy misconfiguration that would otherwise fail loudly."
+  - Every `allowedHosts` entry is **also added to `trustedOrigins`**, as `https://<host>` plus `http://<host>` for loopback hosts (`dist/context/helpers.mjs → getTrustedOrigins`). So a host you allow is a host you trust; do not pad the list.
+  - When `isDynamicBaseURLConfig(options.baseURL)` is true, the warning is skipped entirely — the check is `if (!baseURL && !isDynamicConfig)`.
+
+  **Gotcha:** a direct `auth.api.*` call has no request, so host resolution fails with `Dynamic baseURL could not be resolved for this direct auth.api call`. Always pass `headers` (carrying a `Host`) to direct `auth.api` calls. The HTTP `/api/auth/*` routes are unaffected because they carry a real `Request`.
 - **Better Auth's `info` command** is the fastest way to file good bug reports — outputs everything in a redacted form.
 
 ## Concrete recipe for the job-tracker

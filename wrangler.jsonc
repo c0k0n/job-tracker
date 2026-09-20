@@ -42,18 +42,17 @@
 	// Non-secret config. BETTER_AUTH_SECRET is a `wrangler secret put` value,
 	// never committed.
 	"vars": {
-		// Intentionally absent: BETTER_AUTH_URL. When it is unset, Better Auth
-		// derives the base URL from each request's own origin, so the same
-		// build works locally and at
-		// https://job-tracker.sanctum.workers.dev with no per-environment
-		// config. Set it as a runtime variable only if you want to pin auth to
-		// exactly one origin. See docs/deployment.md.
-		// Extra trusted auth origins (comma-separated), for local ports other
-		// than the one the dev server serves on. MUST stay empty in production —
-		// anything listed here is accepted as a valid auth origin, so a
-		// leftover localhost entry would let a local page forge requests.
-		// baseURL is always trusted, so the default local setup needs nothing.
-		// See auth.ts trustedOrigins.
+		// Intentionally absent: BETTER_AUTH_URL. When it is unset, auth.ts
+		// uses Better Auth's dynamic baseURL object form (allowedHosts lives
+		// in src/lib/server/auth.ts), which resolves the origin per request
+		// and validates it against an allowlist rather than trusting any
+		// Host that arrives. Setting this pins auth to one origin and throws
+		// that away. See docs/auth.md "Base URL".
+		// Extra trusted auth origins (comma-separated). Their hosts are also
+		// added to allowedHosts, so this is the escape hatch for anything the
+		// built-in list does not cover — a LAN IP for testing on a phone, say.
+		// MUST stay empty in production: anything listed here is accepted as a
+		// valid auth origin. See auth.ts trustedOrigins.
 		"DEV_ORIGINS": ""
 	},
 	"workers_dev": true,

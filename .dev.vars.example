@@ -7,16 +7,18 @@
 BETTER_AUTH_SECRET=change-me-generate-with-openssl-rand-hex-32
 
 # Origin the auth routes mount under — OPTIONAL, and recommended to leave
-# unset. With it unset, Better Auth derives the base URL from each request's
-# own origin, so `bun run dev` (5173), `wrangler dev` (8787) and the deployed
+# unset. With it unset, auth.ts uses Better Auth's dynamic baseURL form: the
+# origin is resolved per request and validated against an allowlist
+# (job-tracker.sanctum.workers.dev, *.workers.dev, localhost:*, 127.0.0.1:*).
+# So `bun run dev` (5173), `bun run preview` (8787) and the deployed
 # workers.dev URL all work from one build with nothing to change.
 # Set it only to pin auth to a single origin.
 # BETTER_AUTH_URL=http://localhost:5173
 
-# Extra trusted origins for local tooling (comma-separated). baseURL
-# (BETTER_AUTH_URL) is always trusted, so this only matters when you serve
-# on a port other than the one above — e.g.
-#   DEV_ORIGINS=http://localhost:8787,http://127.0.0.1:8788
+# Extra trusted origins (comma-separated). Their hosts are added to the
+# allowedHosts allowlist too, so this is the escape hatch for anything the
+# built-in list does not cover — e.g. testing on a phone over LAN:
+#   DEV_ORIGINS=http://192.168.1.5:5173
 # Leave empty (and leave the wrangler.jsonc var empty) in production: every
 # origin listed here is accepted as a valid auth origin.
 DEV_ORIGINS=
