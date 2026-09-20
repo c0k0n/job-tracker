@@ -14,5 +14,19 @@ export default defineConfig({
 			},
 			adapter: adapter()
 		})
-	]
+	],
+	build: {
+		rolldownOptions: {
+			checks: {
+				// rolldown's PLUGIN_TIMINGS report: fires when the Rust-side
+				// build exceeds 3s and plugin time is >100x the link stage.
+				// For SvelteKit that is always true and never actionable —
+				// vite-plugin-sveltekit-compile is legitimately most of the
+				// build. Flip back to true if you ever suspect a plugin is
+				// genuinely slow. (`bundlerTimings` in newer rolldown; this
+				// version's binding still reads `pluginTimings`.)
+				pluginTimings: false
+			}
+		}
+	}
 });

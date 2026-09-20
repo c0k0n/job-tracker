@@ -198,6 +198,23 @@ SQL will not be applied until it lands on `main`.
 | `bun: command not found` in build | Bun missing or renamed | Set build variable `BUN_VERSION` |
 | Sign-in or sign-up returns **1102**, but page loads are fine | The password hash costs more CPU than the free tier allows | Read [free-tier-budget.md](free-tier-budget.md#the-one-request-that-does-not-fit-sign-in) before changing anything |
 
+## Build log lines you can safely ignore
+
+A clean `bun run preview` or `bun run build` still prints three things. None of them means
+anything is wrong.
+
+| Line | Why it is there |
+|---|---|
+| `Run npm run preview to preview your production build locally.` | SvelteKit prints a hardcoded string; it does not detect that you used bun. `bun run preview` is what you actually ran, and it is correct. |
+| `▲ [WARNING] Ignoring this import because "node_modules/devalue/index.js" was marked as having no side effects` | SvelteKit emits a bare `import "devalue"` in its server output; devalue declares `sideEffects: false`, so the bundler drops the redundant import and says so. `devalue` is still bundled and is what encodes form results — the app is not missing it. |
+| `GET /.well-known/appspecific/com.chrome.devtools.json 404` | Chrome probes this path when DevTools is open, looking for a workspace file. A 404 is the right answer. |
+
+The one that *was* actionable used to appear between them: a `[PLUGIN_TIMINGS] Plugin hooks ran
+for …` block. It is off in `vite.config.ts` (`build.rolldownOptions.checks.pluginTimings`) because
+for SvelteKit it is always true and never actionable — `vite-plugin-sveltekit-compile` legitimately
+is most of the build. Newer rolldown versions rename that option to `checks.bundlerTimings`, so if
+the block ever comes back after an upgrade, change the key.
+
 ## The one thing to know before you go live
 
 Everything in this app fits the Workers free tier except **one request**: sign-in and sign-up.
