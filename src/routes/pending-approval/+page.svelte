@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { resolve as resolvePath } from '$app/paths';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 </script>
 
 <svelte:head>
@@ -21,7 +24,16 @@
 		Your account is created and waiting for approval. This tracker is private to a small group, so
 		an existing member has to let you in.
 	</p>
-	<p class="mt-4 text-sm text-muted">Once approved, come back and sign in with your email.</p>
+	<p class="mt-4 text-sm text-muted">
+		{#if data.handle}
+			Once approved, sign in with <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-fg"
+				>{data.handle}</span
+			>
+			or your full email — either works.
+		{:else}
+			Once approved, come back and sign in with your email.
+		{/if}
+	</p>
 	<p class="mt-2 text-xs text-muted/80">This page is safe to close.</p>
 
 	<div class="mt-8">

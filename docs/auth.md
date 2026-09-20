@@ -40,6 +40,7 @@ Three things about this arrangement are load-bearing:
 | `advanced.database.joins` | `true` | Lets the adapter resolve relations in one query |
 | `rateLimit` | `window: 60, max: 100, storage: 'database'` | Memory storage is decorative on Workers — isolates reset between requests |
 | `plugins` | `admin()`, `username()`, `sveltekitCookies()` | Role checks, username sign-in, cookie plumbing |
+| `username()` validation | `/^[a-zA-Z0-9_.]+$/`, length 3–30 | Better Auth defaults (`defaultUsernameValidator`), not overridden — see [Sign-in handles](#sign-in-handles) |
 
 ## The four gates
 
@@ -87,6 +88,48 @@ for which emails have accounts — but it means the route cannot rely on Better 
 duplicates. `src/routes/+page.server.ts` pre-checks the email itself and returns the friendly
 error.
 
+## Sign-in handles
+
+Sign-up asks for an email. Sign-in says "username or email". Both are true, and the join between
+them is a derived handle — `src/routes/+page.server.ts` computes it from the email's local part at
+sign-up time and stores it in `user.username`.
+
+```mermaid
+flowchart LR
+    A["john-smith@gmail.com"] --> B["deriveHandle()"]
+    B --> C["john.smith"]
+    D["jo@x.com"] --> E["deriveHandle()"]
+    E --> F["null — too short"]
+    F --> G["sign in by email only"]
+```
+
+The derivation is not cosmetic. `username()` validates against `/^[a-zA-Z0-9_.]+$/` inside a 3–30
+window, and real local parts fall outside that constantly — `john-smith`, `me+tag`, `jo`. Passing
+the raw local part through made `signUpEmail` throw `Username is invalid` / `Username is too
+short`, which took the whole page to a 500. So:
+
+| Input | Handle | Note |
+|---|---|---|
+| `noa@noa.com` | `noa` | Already valid, unchanged |
+| `john-smith@gmail.com` | `john.smith` | `-` becomes a dot, which stays readable |
+| `noa+tag@gmail.com` | `noa.tag` | Same rule |
+| `mary.jane@x.com` | `mary.jane` | Dots survive as-is |
+| `jo@x.com` | `null` | Under 3 characters — no handle, email sign-in only |
+
+When the derivation returns `null` the account is created with no `username` at all. That is a
+supported state, not a fallback: sign-in branches on the `@` and only resolves a handle when the
+input has none, so those users simply always use their email.
+
+Two consequences worth knowing:
+
+- **The handle is shown once, at sign-up.** `/pending-approval?handle=…` echoes it, re-validated
+  server-side against `/^[a-z0-9_.]{3,30}$/` because it arrives through a URL. There is no
+  settings page to change or add one later — see below.
+- **Two emails can derive the same handle.** Sign-up pre-checks `user.username` and returns a
+  friendly "try a different address" instead of Better Auth's `USERNAME_IS_ALREADY_TAKEN`.
+  `signUpEmail` is additionally wrapped in try/catch, so any remaining Better Auth rejection
+  degrades to a form error rather than the error boundary.
+
 ## What is not implemented
 
 | Not here | Consequence |
@@ -96,6 +139,7 @@ error.
 | OAuth | `account` table is ready; no provider is registered |
 | 2FA / passkeys | Not enabled |
 | Session revocation UI | Only the self-heal path in `hooks.server.ts` |
+| Choosing or editing your handle | Derived once at sign-up; `username()` treats it as immutable, so there is no UI to change it |
 
 Any of these needs a mail sender first. Better Auth hands you a `sendEmail` callback — on Workers,
 hand it to `ctx.waitUntil` so the response is not blocked.

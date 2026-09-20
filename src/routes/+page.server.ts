@@ -34,6 +34,35 @@ function safeNextParam(raw: string): string {
 	return '/dashboard';
 }
 
+/**
+ * Derive a sign-in handle from an email's local part.
+ *
+ * Better Auth's `username()` plugin validates against `/^[a-zA-Z0-9_.]+$/`
+ * inside a 3-30 length window — see `defaultUsernameValidator` in
+ * node_modules/better-auth/dist/plugins/username/index.mjs. Real email local
+ * parts routinely fall outside that (`john-smith`, `me+tag`, `jo`), and a raw
+ * local part therefore made `signUpEmail` throw and take the whole page to a
+ * 500.
+ *
+ * Anything disallowed becomes a dot, which keeps the handle readable —
+ * `john-smith` becomes `john.smith` rather than `johnsmith` or a rejection.
+ * Returns `null` when nothing usable is left; that account has no handle and
+ * signs in by email, which always works.
+ */
+function deriveHandle(email: string): string | null {
+	const local = email.split('@')[0] ?? '';
+	const cleaned = local
+		.toLowerCase()
+		.replace(/[^a-z0-9_.]+/g, '.')
+		.replace(/\.{2,}/g, '.')
+		.replace(/^\.+|\.+$/g, '')
+		.slice(0, 30)
+		.replace(/\.+$/g, '');
+	if (cleaned.length < 3) return null;
+	if (!/^[a-z0-9_.]+$/.test(cleaned)) return null;
+	return cleaned;
+}
+
 /** Typed failure wrapper — one declared payload shape so the page's
  * ActionData union collapses to a single FailPayload instead of
  * per-call literal types. */
@@ -123,35 +152,62 @@ export const actions: Actions = {
 					emailOrUsername: 'That email already has an account. Sign in instead.'
 				});
 			}
-			// Same for the derived username (email local part) — BA would
-			// surface "Username is invalid/taken" jargon at sign-in time.
-			const username = emailOrUsername.split('@')[0]!.toLowerCase();
-			const takenUsername = await db
-				.select({ id: user.id })
-				.from(user)
-				.where(eq(user.username, username))
-				.limit(1)
-				.all();
-			if (takenUsername.length > 0) {
-				return authFail(400, mode, emailOrUsername, {
-					emailOrUsername: 'That email is taken because its handle is. Try a different address.'
-				});
+			// `null` means the local part had nothing usable in it (too
+			// short, or nothing but punctuation). That account gets no
+			// handle and signs in by email — which is always valid.
+			const handle = deriveHandle(emailOrUsername);
+			if (handle) {
+				const takenUsername = await db
+					.select({ id: user.id })
+					.from(user)
+					.where(eq(user.username, handle))
+					.limit(1)
+					.all();
+				if (takenUsername.length > 0) {
+					return authFail(400, mode, emailOrUsername, {
+						emailOrUsername:
+							'That email is taken because its sign-in handle is. Try a different address.'
+					});
+				}
 			}
 
 			// The first user ever bootstraps as an approved admin inside
 			// the create.before hook in auth.ts; everyone else lands in
 			// the approval queue. autoSignIn is off, so no session cookie
 			// is set either way.
-			await auth.api.signUpEmail({
-				body: {
-					email: emailOrUsername,
-					name: username,
-					username,
-					password,
-					callbackURL: safeNextParam(url.searchParams.get('next') ?? '')
+			//
+			// Wrapped: signUpEmail throws an APIError for anything Better
+			// Auth dislikes, and an unguarded throw here takes the whole
+			// page to the error boundary. signInEmail below has the same
+			// guard for the same reason.
+			try {
+				await auth.api.signUpEmail({
+					body: {
+						email: emailOrUsername,
+						name: handle ?? emailOrUsername.split('@')[0]!,
+						username: handle ?? undefined,
+						password,
+						callbackURL: safeNextParam(url.searchParams.get('next') ?? '')
+					}
+				});
+			} catch (err) {
+				const status =
+					typeof err === 'object' && err !== null && 'status' in err
+						? Number(err.status)
+						: undefined;
+				if (status !== undefined && status >= 500) {
+					return authFail(500, mode, emailOrUsername, {
+						_form: 'Something went wrong on our side. Please try again in a moment.'
+					});
 				}
-			});
-			throw redirect(303, '/pending-approval');
+				return authFail(400, mode, emailOrUsername, {
+					emailOrUsername: 'We could not create that account. Try a different email address.'
+				});
+			}
+
+			// Tell them the handle they just got — otherwise "username or
+			// email" on the sign-in form is a mystery.
+			throw redirect(303, handle ? `/pending-approval?handle=${handle}` : '/pending-approval');
 		}
 
 		// Sign-in: resolve "username or email" to an email first, then

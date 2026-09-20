@@ -20,7 +20,7 @@ flowchart TD
 | Route | File | Guard | Purpose |
 |---|---|---|---|
 | `/` | `+page.server.ts` | Redirects to `/dashboard` if signed in | Sign-in / sign-up |
-| `/pending-approval` | `+page.server.ts` | Redirects to `/dashboard` if signed in | "Wait for an admin" notice |
+| `/pending-approval` | `+page.server.ts` | Redirects to `/dashboard` if signed in | "Wait for an admin" notice; `?handle=` echoes the derived sign-in handle |
 | `/dashboard` | `+page.server.ts` | Redirects to `/` if not signed in | The app |
 | `/dashboard/export.csv` | `+server.ts` | Same as dashboard | CSV download of the current view |
 | `/admin/approvals` | `+page.server.ts` | Signed in **and** `role === 'admin'` | Approval queue |
