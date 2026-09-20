@@ -56,12 +56,13 @@ flowchart LR
         B --> C["computeKpis() — pure, no I/O"]
         B --> D["charts — pure, no I/O"]
     end
-    E["8 widgets, 8 queries"] -.->|"rejected"| F["would risk both ceilings"]
+    E["9 widgets, 9 queries"] -.->|"rejected"| F["would risk both ceilings"]
 ```
 
 | Decision | Buys |
 |---|---|
 | One batched aggregate, not a query per widget | Keeps D1 queries in single digits and CPU at ~2-3 ms |
+| The agenda reuses `upcomingInterviews` from that same rollup | The one *prospective* panel costs zero extra queries — it is pure derivation over data already fetched |
 | `STAGE_MOVES_WINDOW_DAYS = 90` | The `activity_event` scan costs the same on day 1 and day 1000 |
 | `session.cookieCache` (5 min, `compact`) | Session reads skip D1 entirely on most requests |
 | `replaceState` for filter / sort / modal state | Those interactions cost zero Worker invocations |

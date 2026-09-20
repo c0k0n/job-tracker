@@ -371,6 +371,30 @@ For event/observability data. `env.ANALYTICS.writeDataPoint({ blobs: [...], doub
 - For CI: set `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`. `wrangler deploy` is non-interactive. No state to persist between runs.
 - Preview environments: per-branch `wrangler deploy` to a unique worker name (`job-tracker-pr-123`). Use a wildcard route or Pages-style URL — Cloudflare gives preview URLs automatically with `preview_urls: true` in `wrangler.jsonc`.
 
+### Workers Builds build image
+
+Verified against [Build image](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/)
+(last updated 2026-07-30).
+
+| Tool | Default | Override variable |
+|---|---|---|
+| Node.js | 24.18.0 (22.23.2 also preinstalled) | `NODE_VERSION`, `.nvmrc`, `.node-version` |
+| **Bun** | **1.2.15** | `BUN_VERSION` |
+| pnpm | 10.11.1 | `PNPM_VERSION` |
+| yarn | 4.9.1 | `YARN_VERSION` |
+| npm | 10.9.2 | *(none — tracks Node)* |
+
+Two things follow for this repo, which is built with Bun 1.4.x locally:
+
+- **The image default is older than local.** Set `BUN_VERSION=1.4.2` as a build variable rather
+  than assuming CI matches your machine.
+- **Minor versions bump without notice.** Cloudflare's own policy is that minor updates happen
+  silently and only major ones get three months' notice, so pinning is the only way to keep a
+  build reproducible.
+
+Build environment is Ubuntu 24.04 / x86_64. `SKIP_DEPENDENCY_INSTALL=1` disables the automatic
+install if you would rather run your own.
+
 ## Key pitfalls for SvelteKit on Cloudflare
 
 - **No `fs`**: don't import anything that reads files at runtime. `import.meta.glob` is build-time only.
@@ -408,3 +432,4 @@ For event/observability data. `env.ANALYTICS.writeDataPoint({ blobs: [...], doub
 - Vectorize: https://developers.cloudflare.com/vectorize/
 - Workers AI: https://developers.cloudflare.com/workers-ai/
 - Workers best practices: https://developers.cloudflare.com/workers/best-practices/workers-best-practices/
+- Workers Builds build image (default tool versions): https://developers.cloudflare.com/workers/ci-cd/builds/build-image/

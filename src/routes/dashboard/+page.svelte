@@ -13,6 +13,7 @@
 		hasActiveFilters,
 		serializeFiltersToUrl
 	} from '$lib/utils/sortFilter';
+	import { safeEnhance } from '$lib/utils/enhance';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import ApplicationsTable from '$lib/components/ApplicationsTable.svelte';
@@ -21,6 +22,7 @@
 	import StageDwellChart from '$lib/components/StageDwellChart.svelte';
 	import VelocityChart from '$lib/components/VelocityChart.svelte';
 	import ConversionFunnel from '$lib/components/ConversionFunnel.svelte';
+	import AgendaPanel from '$lib/components/AgendaPanel.svelte';
 	import ApplicationDetailModal from '$lib/components/ApplicationDetailModal.svelte';
 	import ResumeLibraryModal from '$lib/components/ResumeLibraryModal.svelte';
 	import ApplicationForm from '$lib/components/ApplicationForm.svelte';
@@ -143,6 +145,14 @@
 		});
 	}
 
+	// The agenda panel hands back an id rather than a row. The detail
+	// modal opens from `?app=<id>` either way, so it routes through the
+	// same navigation as a table-row click.
+	function openRowById(id: string) {
+		const app = data.applications.find((a) => a.id === id);
+		if (app) onRowClick(app);
+	}
+
 	// Modal open helpers — flip local state; the URL-sync effect below
 	// shallow-routes the query string (no worker invocation).
 	function openNewApp() {
@@ -155,6 +165,12 @@
 	// Trash view: two-click "empty trash" confirm. Local only — one armed
 	// state for the whole header, mirroring the row-level pattern.
 	let confirmEmptyTrash = $state(false);
+
+	// Sign-out and "empty trash" post in place, so a failed request is
+	// reported here instead of replacing the page with the error boundary
+	// (which would also drop the user's filters and scroll position).
+	let actionError = $state<string | null>(null);
+	const onActionError = (message: string) => (actionError = message);
 
 	// Trash view toggle: a real navigation (different row set from the
 	const trashHref = $derived(resolvePath(data.trashView ? '/dashboard' : '/dashboard?trash=1'));
@@ -218,10 +234,19 @@
 		</div>
 		<!-- Actions live in the Applications section header, not here.
 			The top header only carries sign-out. -->
-		<form method="POST" action="?/signout" use:enhance>
+		<form method="POST" action="?/signout" use:enhance={safeEnhance(onActionError)}>
 			<Button type="submit" variant="outline">Sign out</Button>
 		</form>
 	</header>
+
+	{#if actionError}
+		<div
+			role="alert"
+			class="mb-6 rounded-lg border border-danger bg-danger-bg px-4 py-3 text-sm text-danger"
+		>
+			{actionError}
+		</div>
+	{/if}
 
 	{#if staleCount > 0 && !data.trashView}
 		<div
@@ -289,6 +314,23 @@
 	{/if}
 
 	{#if !data.trashView}
+		<!--
+			Agenda first. The charts below describe what already happened;
+			this is the one panel that tells the user what to do today, so
+			it sits directly under the KPI strip rather than competing with
+			the retrospective charts for attention.
+		-->
+		<section class="mt-6 sm:mt-8" aria-labelledby="agenda-heading">
+			<h2 id="agenda-heading" class="text-sm font-medium text-fg">Next up</h2>
+			<div class="mt-3">
+				<AgendaPanel
+					apps={data.applications}
+					interviews={data.upcomingInterviews}
+					onSelect={openRowById}
+				/>
+			</div>
+		</section>
+
 		<section class="mt-6 sm:mt-8" aria-labelledby="pipeline-heading">
 			<h2 id="pipeline-heading" class="text-sm font-medium text-fg">Pipeline</h2>
 			<div class="mt-3">
@@ -317,7 +359,7 @@
 				{#if data.trashedCount > 0}
 					<a
 						href={trashHref}
-						class="rounded-full border border-border bg-surface px-2.5 py-0.5 font-mono text-[11px] tracking-wide text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="inline-flex min-h-6 items-center rounded-full border border-border-strong bg-surface px-2.5 py-0.5 font-mono text-[11px] tracking-wide text-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 					>
 						{trashLabel} · {data.trashedCount}
 					</a>
@@ -340,7 +382,7 @@
 					href={resolvePath('/dashboard/export.csv')}
 					download
 					title="Download all your applications as a spreadsheet"
-					class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					class="rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 				>
 					Export CSV
 				</a>
@@ -348,14 +390,19 @@
 					<a
 						href={resolvePath('/admin/approvals')}
 						title="Approve or reject new sign-ups"
-						class="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="rounded-md border border-border-strong bg-surface px-2.5 py-1.5 text-xs text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 					>
 						Admin queue
 					</a>
 				{/if}
 				{#if data.trashView && data.applications.length > 0}
 					{#if confirmEmptyTrash}
-						<form method="POST" action="?/emptyTrash" use:enhance class="contents">
+						<form
+							method="POST"
+							action="?/emptyTrash"
+							use:enhance={safeEnhance(onActionError)}
+							class="contents"
+						>
 							<Button
 								type="submit"
 								variant="danger"
@@ -428,7 +475,7 @@
 					{#snippet action()}
 						<a
 							href={resolvePath('/dashboard')}
-							class="rounded-md border border-border bg-surface px-4 py-2 text-sm text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+							class="rounded-md border border-border-strong bg-surface px-4 py-2 text-sm text-fg transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 						>
 							Back to active
 						</a>
@@ -452,6 +499,25 @@
 				/>
 			{/if}
 		</div>
+
+		<!--
+			4.1.3 Status Messages. Filtering and sorting happen entirely on
+			the client — no navigation, no page reload — so a screen reader
+			would otherwise be told nothing when the row set changes. This
+			region is deliberately rendered unconditionally: a live region
+			that mounts and unmounts alongside the table is not reliably
+			announced, because assistive tech only observes regions that
+			already exist in the accessibility tree.
+		-->
+		<p class="sr-only" role="status">
+			{#if data.trashView}
+				{visibleRows.length}
+				{visibleRows.length === 1 ? 'application' : 'applications'} in the trash
+			{:else}
+				Showing {visibleRows.length} of {data.applications.length}
+				{visibleRows.length === 1 ? 'application' : 'applications'}
+			{/if}
+		</p>
 
 		{#if (hasApplications || hasTrashedApps) && !data.trashView}
 			<p class="mt-3 text-xs text-muted">

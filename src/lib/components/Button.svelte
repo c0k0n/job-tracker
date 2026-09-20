@@ -45,7 +45,7 @@
 		{
 			primary: 'bg-accent text-accent-fg hover:bg-accent-hover',
 			ghost: 'bg-transparent text-fg hover:bg-surface-2',
-			outline: 'bg-surface text-fg border border-border hover:bg-surface-2',
+			outline: 'bg-surface text-fg border border-border-strong hover:bg-surface-2',
 			danger: 'bg-danger text-danger-fg hover:opacity-90'
 		}[variant]
 	);

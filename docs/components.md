@@ -1,6 +1,6 @@
 # Components
 
-Thirteen components in `src/lib/components/`. All of them are presentational: none read `page` for
+Fifteen components in `src/lib/components/`. All of them are presentational: none read `page` for
 mutable state, none touch `$lib/server`. One of them fetches — `ResumeLibraryModal`, and the reason
 it is allowed to is in [the one exception](#the-one-exception-resumelibrarymodal-fetches).
 
@@ -11,6 +11,7 @@ flowchart TD
     P --> CF["ConversionFunnel"]
     P --> VC["VelocityChart"]
     P --> SD["StageDwellChart"]
+    P --> AG["AgendaPanel"]
     P --> AT["ApplicationsTable"]
     P --> ES["EmptyState"]
     P --> DM["ApplicationDetailModal"]
@@ -40,8 +41,9 @@ flowchart TD
 | `ApplicationDetailModal.svelte` | `detail` (`ApplicationDetail \| null`) | `open` (bindable), `form`, `resumes` | Renders timeline, interviews, contacts, and — when `detail.resumeId` resolves to a row in `resumes` — the filename, a download link, and an inline preview |
 | `ResumeLibraryModal.svelte` | `resumes` | `open` (bindable) | Upload (PDF, 10 MB, 20 max), list with size / date / `usedBy`, open, download, two-click delete |
 | `ConversionFunnel.svelte` | `apps` | — | Current-state funnel |
-| `VelocityChart.svelte` | — | — | Applications per week over a 90-day window |
+| `VelocityChart.svelte` | `apps` | `stageMoves` (server-computed, for the transitions line), `windowDays` (default `90`) | Applications per week over a 90-day window |
 | `StageDwellChart.svelte` | `apps` | — | Median days in each live stage |
+| `AgendaPanel.svelte` | `apps`, `interviews`, `onSelect` | `limit` (default `6`) | Merges pending interviews and `nextActionAt` follow-ups into one chronological list. Overdue rows are never truncated away by `limit`. Tapping a row calls `onSelect(id)` and the parent opens the detail modal |
 
 ## Two conventions worth keeping
 
@@ -97,5 +99,7 @@ server returned, not a local guess. Errors are surfaced inline with `role="alert
 | `EmptyState.svelte` | Heading, not a styled `<div>` |
 | `ResumeLibraryModal.svelte` | Two-click delete, and the confirm step names how many applications will be detached before you commit. `role="status"` for success, `role="alert"` for failure |
 | Charts | Bar widths are visual; the same numbers are present as text |
+| `AgendaPanel.svelte` | An `<ol>` of real `<button>`s. The whole row is the target, and `aria-label` repeats the date so the row is not "Phone screen" repeated six times in a screen reader |
+| `FilterBar.svelte` | Every chip is `inline-flex min-h-6` — WCAG 2.2 SC 2.5.8 needs a 24×24 target even when the chip itself is visually smaller |
 
 There is no custom focus-ring reset anywhere. If you add one, you have broken keyboard navigation.

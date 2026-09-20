@@ -10,7 +10,7 @@ Built with SvelteKit 2 (Svelte 5 runes-only) + Tailwind v4 + Better Auth on Clou
 - **Application pipeline** — create, edit, and track job applications through stages (`saved` → `applied` → `phone_screen` → `technical` → `onsite` → `final` → `offer` → `accepted` / `rejected` / `withdrawn`), with tags, salary (integer minor units, multiple currencies), and work arrangement. Soft delete with trash, restore, and permanent purge.
 - **Per-application detail** — interviews, contacts, and an activity timeline (stage changes, notes) in one modal.
 - **Resume library on R2** — upload PDFs (10 MB max, 20 per user), attach one to any application so you know which version you sent where, preview it inline, or download it. Deleting a resume detaches it from applications instead of taking them with it.
-- **Analytics** — KPI cards, conversion funnel, stage-dwell and velocity charts computed from real data.
+- **Analytics** — KPI cards, conversion funnel, stage-dwell and velocity charts computed from real data, plus a _Next up_ agenda that merges pending interviews and per-application follow-up dates into one ordered list you can tap straight through from.
 - **CSV export** — RFC-4180 quoting with a formula-injection neutralizer (leading `=`, `+`, `-`, `@` are neutralized so opening the export in Excel is safe).
 - **Admin approval queue** — approve (enable) or reject (delete + cascade) pending sign-ups.
 
@@ -38,7 +38,7 @@ The URL is the source of truth for dashboard state: filters, sort, and the open 
 | `src/lib/components/` | Svelte 5 components (Modal with focus trap, table, charts, forms)                                                                                                                                                                                                 |
 | `src/lib/server/`     | Better Auth wiring + data layer. `applications-data.ts` and `resumes-data.ts` — every function takes `(db, userId, …)`; every query filters on `userId`. `db/schema.ts` — Drizzle schema + row mappers (ISO ↔ unix-seconds conversion, the only conversion point) |
 | `src/lib/constants/`  | Stages, statuses, currencies, resume limits (10 MB, 20 per user) and PDF magic bytes                                                                                                                                                                              |
-| `src/lib/utils/`      | Pure helpers: KPIs, money, dates, sort/filter                                                                                                                                                                                                                     |
+| `src/lib/utils/`      | Pure helpers: KPIs, money, dates, sort/filter, `enhance.ts` form-error handling                                                                                                                                                                                   |
 | `db/migrations/`      | Drizzle-generated SQL files (the database recipe). Applied to D1 via `wrangler d1 migrations apply` — never hand-edit                                                                                                                                             |
 | `db/scripts/`         | Dev-only: `bun run seed` fills **local** D1 with a test admin + sample data. Never touches the remote DB                                                                                                                                                          |
 | `docs/`               | `docs/README.md` is the index. `docs/*.md` describes **this repo**; `docs/research/*.md` records **vendor** behaviour with citations — the source of truth for stack behavior (see AGENTS.md)                                                                     |
@@ -52,6 +52,8 @@ The URL is the source of truth for dashboard state: filters, sort, and the open 
 - **Free tier only.** Two bindings, both free: D1 for rows, R2 for resume bytes (10 GB, zero egress). No KV/DO/Queues. Resume reads are proxied by the Worker — the bucket is never public and no presigned URL is ever issued.
 - **Bytes and metadata are written in that order, and cleaned up together.** R2 gets the object first; if the D1 row then fails, the object is deleted. A resume row is the only pointer to its object.
 - **Flat migrations under `db/`.** drizzle-kit 0.31 emits `db/migrations/NNNN_name.sql`; `wrangler.jsonc` uses `migrations_pattern: 'db/migrations/*.sql'`. `db/scripts/` holds the local-only seed.
+- **Two border weights, because WCAG 1.4.11 only covers interactive edges.** `--color-border` is a decorative hairline (card edges, section rules) and stays light; `--color-border-strong` is the boundary that _identifies_ an input, chip, or outline button, so it clears 3:1 on every surface. Darkening every hairline instead would flatten the whole design.
+- **A dead connection never costs you the page.** `use:enhance` turns a failed `fetch` into `{ type: 'error' }`, and the default callback throws that at the nearest error boundary — so a blip on "Move to trash" would replace the dashboard and lose your filters. `safeEnhance()` in `src/lib/utils/enhance.ts` intercepts only that case and reports it inline; validation echo-back and redirects are untouched.
 
 ## Documentation
 
@@ -127,6 +129,7 @@ The short version of the one-time setup:
 3. Dashboard → Settings → Build → connect the GitHub repo
      build command:  bun install --frozen-lockfile && bun run build
      deploy command: bun run db:migrate:remote && bunx wrangler deploy
+     build variable: BUN_VERSION=1.4.2   (the image default is 1.2.15)
 4. git push origin main                       → live
 ```
 

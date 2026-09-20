@@ -160,7 +160,7 @@
 						disabled={busy}
 						onchange={onFileChange}
 						aria-describedby="resume-file-hint"
-						class="block w-full cursor-pointer rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg file:mr-3 file:rounded-sm file:border-0 file:bg-accent file:px-3 file:py-1.5 file:font-medium file:text-accent-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+						class="block w-full cursor-pointer rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-fg file:mr-3 file:rounded-sm file:border-0 file:bg-accent file:px-3 file:py-1.5 file:font-medium file:text-accent-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 					/>
 					<p id="resume-file-hint" class="text-xs text-muted">
 						PDF only, up to {formatBytes(MAX_RESUME_BYTES)}. Stored privately in your Cloudflare

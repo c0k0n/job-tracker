@@ -10,6 +10,7 @@
 	import { formatSalary } from '$lib/utils/money';
 	import { STAGES, STATUSES } from '$lib/constants/stages';
 	import { formatBytes } from '$lib/constants/resumes';
+	import { enhanceErrorMessage, safeEnhance } from '$lib/utils/enhance';
 
 	interface Props {
 		/** Resolved detail bundle for the application currently in the modal.
@@ -69,6 +70,12 @@
 	// Trash actions. `purge` is confirmed via a two-click pattern
 	// (first click reveals the confirm button; second submits).
 	let confirmPurgeOpen = $state(false);
+
+	// Row-level mutations post in place, so a failed request reports here
+	// rather than replacing the page (and closing this modal) via the
+	// error boundary.
+	let actionError = $state<string | null>(null);
+	const onActionError = (message: string) => (actionError = message);
 	function openConfirmPurge() {
 		confirmPurgeOpen = true;
 	}
@@ -123,10 +130,16 @@
 	size="xl"
 >
 	{#if !app}
-		<div class="px-6 py-10 text-center text-sm text-muted">
-			This application is no longer available.
-		</div>
+		<div class="py-10 text-center text-sm text-muted">This application is no longer available.</div>
 	{:else}
+		{#if actionError}
+			<p
+				role="alert"
+				class="mb-3 rounded-md border border-danger bg-danger-bg px-3 py-2 text-sm text-danger"
+			>
+				{actionError}
+			</p>
+		{/if}
 		<header class="mb-3 flex items-baseline justify-between gap-3">
 			<h2 id="app-detail-heading" class="text-base font-semibold text-fg">Application details</h2>
 			<span class="font-mono text-[10px] tracking-widest text-muted uppercase">{app.id}</span>
@@ -135,7 +148,7 @@
 		<div
 			role="tablist"
 			aria-label="Application sections"
-			class="flex gap-1 border-b border-border bg-surface px-6"
+			class="-mx-4 flex gap-1 border-b border-border bg-surface px-4 sm:-mx-6 sm:px-6"
 		>
 			<button
 				type="button"
@@ -341,7 +354,12 @@
 
 					<!-- Trash / restore / purge actions -->
 					<div class="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
-						<form method="POST" action="?/restore" use:enhance class="contents">
+						<form
+							method="POST"
+							action="?/restore"
+							use:enhance={safeEnhance(onActionError)}
+							class="contents"
+						>
 							<input type="hidden" name="id" value={app.id} />
 							<Button
 								type="submit"
@@ -353,7 +371,12 @@
 								Restore
 							</Button>
 						</form>
-						<form method="POST" action="?/delete" use:enhance class="contents">
+						<form
+							method="POST"
+							action="?/delete"
+							use:enhance={safeEnhance(onActionError)}
+							class="contents"
+						>
 							<input type="hidden" name="id" value={app.id} />
 							<Button
 								type="submit"
@@ -376,7 +399,12 @@
 								Permanently delete
 							</Button>
 						{:else}
-							<form method="POST" action="?/purge" use:enhance class="contents">
+							<form
+								method="POST"
+								action="?/purge"
+								use:enhance={safeEnhance(onActionError)}
+								class="contents"
+							>
 								<input type="hidden" name="id" value={app.id} />
 								<Button
 									type="submit"
@@ -410,7 +438,11 @@
 						method="POST"
 						action="?/addInterview"
 						use:enhance={() => {
-							return async ({ update }) => {
+							return async ({ result, update }) => {
+								if (result.type === 'error') {
+									onActionError(enhanceErrorMessage(result.error));
+									return;
+								}
 								await update({ reset: true });
 							};
 						}}
@@ -424,7 +456,7 @@
 									id="int-kind"
 									name="kind"
 									required
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								>
 									<option value="phone_screen">Phone screen</option>
 									<option value="technical">Technical</option>
@@ -441,7 +473,7 @@
 									name="scheduledAt"
 									type="datetime-local"
 									required
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 							<div>
@@ -451,7 +483,7 @@
 									name="withName"
 									type="text"
 									placeholder="Name"
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 							<div>
@@ -461,7 +493,7 @@
 									name="notes"
 									type="text"
 									placeholder="Optional"
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 						</div>
@@ -513,7 +545,11 @@
 						method="POST"
 						action="?/addContact"
 						use:enhance={() => {
-							return async ({ update }) => {
+							return async ({ result, update }) => {
+								if (result.type === 'error') {
+									onActionError(enhanceErrorMessage(result.error));
+									return;
+								}
 								await update({ reset: true });
 							};
 						}}
@@ -528,7 +564,7 @@
 									name="name"
 									type="text"
 									required
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 							<div>
@@ -538,7 +574,7 @@
 									name="role"
 									type="text"
 									placeholder="Recruiter"
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 							<div>
@@ -547,7 +583,7 @@
 									id="ct-email"
 									name="email"
 									type="email"
-									class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								/>
 							</div>
 						</div>
@@ -558,7 +594,7 @@
 								name="notes"
 								type="text"
 								placeholder="Optional"
-								class="mt-1 w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+								class="mt-1 w-full rounded-md border border-border-strong bg-surface px-2 py-1 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 							/>
 						</div>
 						<div class="mt-3 flex justify-end">

@@ -24,10 +24,36 @@ No component knows which theme is active and no component carries a `dark:` vari
 | `--color-surface-2` | `oklch(0.97 0 0)` | `oklch(0.23 0 0)` | Nested / hovered surfaces |
 | `--color-fg` | `oklch(0.21 0 0)` | `oklch(0.97 0 0)` | Body text |
 | `--color-muted` | `oklch(0.5 0 0)` | `oklch(0.7 0 0)` | Secondary text, labels |
-| `--color-border` | `oklch(0.92 0 0)` | `oklch(0.28 0 0)` | Hairlines — **thin borders only** |
+| `--color-border` | `oklch(0.92 0 0)` | `oklch(0.28 0 0)` | Decorative hairlines — card edges, rules, dashed empty states |
+| `--color-border-strong` | `oklch(0.62 0 0)` | `oklch(0.54 0 0)` | **Interactive** boundaries — inputs, chips, outline buttons |
 | `--color-accent` | `oklch(0.21 0 0)` | `oklch(0.97 0 0)` | The single neutral accent |
 
 One accent. No gradients, no rainbow dashboards, no AI purple.
+
+### Why there are two border tokens
+
+WCAG 1.4.11 asks for 3:1 on "visual information required to identify user interface components".
+A card's edge is not that — nothing becomes unreadable if it disappears — so `--color-border`
+stays a hairline. An `<input>`'s outline *is* that: the border alone tells you a field is there,
+so it has to clear 3:1 against every surface it can land on.
+
+```mermaid
+flowchart TD
+    A["a border is needed"] --> B{"is it the only thing<br/>identifying a control?"}
+    B -- "yes: input, select,<br/>file picker, toggle chip" --> C["border-border-strong<br/>3.34:1 worst case"]
+    B -- "no: card edge, divider,<br/>dashed empty state" --> D["border-border<br/>decorative, exempt"]
+```
+
+`0.62` (light) and `0.54` (dark) are the *lightest* values that clear 3:1 against `bg`, `surface`
+**and** `surface-2` — 3.34:1 in both modes. Lighter than that and the worst pair drops under the
+line; darker and the UI picks up outlines it doesn't need.
+
+To re-check after changing any token: convert `oklch(L C H)` to sRGB, take each channel to linear
+lightness (`c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4`), then relative luminance
+`0.2126R + 0.7152G + 0.0722B`, then `(L1 + 0.05) / (L2 + 0.05)`. Text needs 4.5:1 (1.4.3),
+non-text needs 3:1 (1.4.11). For the tag chips, sweep hue 0–359° at fixed `L` and `C` and take the
+**worst** ratio — the worst light-mode hue is 191° at 6.47:1, the worst dark-mode hue is 20° at
+8.56:1.
 
 ## Status colour, without a rainbow
 
@@ -78,6 +104,13 @@ flowchart TD
 - **WCAG 2.2 AA is the target,** not a stretch goal: visible focus rings, `aria-busy` on the busy
   button state, `aria-labelledby` on modals, and contrast held by the `-100`/`-700` pairing rather
   than checked after the fact.
+- **Every interactive target is at least 24×24px** (2.5.8). Small chips and pills get
+  `inline-flex min-h-6 items-center` rather than relying on the spacing exception — a rule you can
+  verify by reading the class list beats one you have to reason about.
+- **Client-side state changes get announced.** Filtering, sorting and row actions happen without a
+  navigation, so a screen reader would otherwise hear nothing. The affected regions carry
+  `role="status"` / `role="alert"`, and live regions are rendered unconditionally — one that mounts
+  and unmounts with its content is not reliably announced.
 
 ## Motion
 

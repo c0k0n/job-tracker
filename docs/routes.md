@@ -133,3 +133,35 @@ The `?next=` parameter goes through `safeNextParam`, which rejects anything star
 `/[...path]` throws `error(404, …)` so `src/routes/+error.svelte` renders instead of SvelteKit's
 bare default. Action failures return `fail(400, { values, errors })` and the form re-renders with
 the user's input echoed back — nothing typed is ever discarded on a validation error.
+
+There are two distinct failure shapes, and they are handled differently on purpose:
+
+```mermaid
+flowchart TD
+    A["form posted"] --> B{"result type?"}
+    B -- "failure (fail 400)" --> C["update() → page.form<br/>fields echo back, errors inline"]
+    B -- "success / redirect" --> D["update() → invalidateAll, follow redirect"]
+    B -- "error (fetch failed)" --> E["safeEnhance intercepts<br/>onError(msg) → role=alert region"]
+    E --> F["page stays intact:<br/>filters, scroll, open modal"]
+```
+
+| Shape | Where it comes from | Handling |
+|---|---|---|
+| `failure` | `fail(400, { values, errors })` in an action | Travels through `page.form`; the field keeps its value |
+| `success` / `redirect` | A completed action | `update()` — `invalidateAll` and follow the redirect |
+| `error` | The `fetch` itself failed: dead connection, worker restart, DNS blip | `safeEnhance()` reports inline, page is never replaced |
+
+That third row is the one worth understanding. SvelteKit's default `enhance` callback calls
+`applyAction(result)`, and applying an `error` result **throws to the nearest `+error.svelte`
+boundary** — verified in the installed source at
+`node_modules/@sveltejs/kit/src/runtime/app/forms.js` (~lines 192–205). So a momentary network
+hiccup on "Move to trash" would swap the whole dashboard for an error page and discard the user's
+filters, scroll position, and open modal.
+
+`safeEnhance(onError)` in `src/lib/utils/enhance.ts` intercepts **only** `type === 'error'` and
+reports it into a `role="alert"` region. Everything else falls through to `update()` untouched, so
+validation echo-back and redirects behave exactly as before. It is wired into every mutating form:
+row actions in `ApplicationsTable`, the detail modal's restore / delete / purge and
+add-interview / add-contact, approve / reject on the admin queue, sign-out and empty-trash on the
+dashboard, plus sign-in / sign-up and `ApplicationForm` (which use `enhanceErrorMessage` directly,
+because they already have their own callback).

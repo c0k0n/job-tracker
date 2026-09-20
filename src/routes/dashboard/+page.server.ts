@@ -81,6 +81,9 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 		trashView,
 		// Server-computed stage-move timestamps for the velocity chart.
 		stageMoves,
+		// Pending interviews for the agenda panel. Already fetched by the
+		// rollup above (30-day window) — returning it costs no extra query.
+		upcomingInterviews,
 		trashedCount,
 		// When the URL has `?app=<id>`, fetch the detail bundle server-side
 		// so the modal renders without a client-side server-only import.

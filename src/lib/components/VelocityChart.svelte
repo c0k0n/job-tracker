@@ -168,12 +168,17 @@
 		</header>
 
 		<!--
-			Inline SVG. ViewBox scales the chart to the container width so it
-			adapts to any layout. `preserveAspectRatio="none"` would distort
-			labels; we use the default `xMidYMid meet` so labels stay crisp.
+			Inline SVG. `preserveAspectRatio="none"` lets the plot fill the
+			box at every breakpoint instead of the default `meet`, which
+			letterboxes an 800x180 viewBox into ~72px of vertical space on a
+			320px phone. Nothing inside the SVG is text (the x-axis labels
+			are HTML below), so the non-uniform scale can't distort type —
+			and `vector-effect="non-scaling-stroke"` keeps line weights even
+			so the stroke doesn't turn into a wedge.
 		-->
 		<svg
 			viewBox={`0 0 ${W} ${H}`}
+			preserveAspectRatio="none"
 			class="block h-32 w-full sm:h-44"
 			role="img"
 			aria-labelledby="velocity-chart-title"
@@ -185,7 +190,13 @@
 			</title>
 
 			<!-- Subtle horizontal grid lines (3 lines: top, mid, bottom). -->
-			<g class="text-border" stroke="currentColor" stroke-width="0.5" opacity="0.5">
+			<g
+				class="text-border"
+				stroke="currentColor"
+				stroke-width="0.5"
+				opacity="0.5"
+				vector-effect="non-scaling-stroke"
+			>
 				<line x1={PAD_X} x2={W} y1={PAD_Y} y2={PAD_Y} />
 				<line x1={PAD_X} x2={W} y1={(H - PAD_Y) / 2} y2={(H - PAD_Y) / 2} />
 				<line x1={PAD_X} x2={W} y1={H - PAD_Y} y2={H - PAD_Y} />
@@ -199,6 +210,7 @@
 				stroke-width="1.5"
 				stroke-linecap="round"
 				stroke-linejoin="round"
+				vector-effect="non-scaling-stroke"
 			/>
 
 			<!-- Transitions line (status-stalled-700, dashed). -->
@@ -210,6 +222,7 @@
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				stroke-dasharray="4 3"
+				vector-effect="non-scaling-stroke"
 			/>
 
 			<!-- Per-day hover target: an invisible column over each day with
@@ -233,9 +246,15 @@
 			X-axis labels. SVG doesn't render the x-axis labels (we want
 			HTML labels for crisp typography + screen-reader friendliness).
 		-->
+		<!--
+			X-axis labels are HTML (not SVG text) so they stay crisp under
+			the non-uniform scale above. Seven dates don't fit on a phone,
+			so below `sm` only the window's first and last date render —
+			enough to orient, no clipping.
+		-->
 		<div class="mt-1 flex justify-between font-mono text-[10px] text-muted">
 			{#each labelIndices as i (i)}
-				<span>{series[i]?.label ?? ''}</span>
+				<span class="hidden first:inline last:inline sm:inline">{series[i]?.label ?? ''}</span>
 			{/each}
 		</div>
 

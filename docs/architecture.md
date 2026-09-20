@@ -40,7 +40,7 @@ flowchart TD
     S --> L["lib/"]
     S --> H["hooks.server.ts<br/>auth + security headers"]
     L --> C["components/<br/>presentational, runes-only"]
-    L --> U["utils/<br/>pure functions: dates, money, kpis, sortFilter"]
+    L --> U["utils/<br/>pure: dates, money, kpis, sortFilter, enhance"]
     L --> K["constants/<br/>stages, currencies, resumes"]
     L --> T["types.ts<br/>domain types, ISO dates"]
     L --> SV["server/"]
@@ -55,7 +55,7 @@ flowchart TD
 | `src/routes/` | Reading the URL, calling the data layer, returning view models | Contain SQL, or know about money formatting |
 | `src/lib/server/applications-data.ts` | Every D1 query in the app | Be imported from a `.svelte` file |
 | `src/lib/server/db/schema.ts` | Table shape **and** the ISO-string ↔ unix-seconds conversion | Be bypassed by a raw `sql` query elsewhere |
-| `src/lib/utils/` | Pure transformations, no I/O | Import from `$lib/server` |
+| `src/lib/utils/` | Pure transformations, no I/O (including `enhance.ts`, which only inspects a submit result) | Import from `$lib/server` |
 | `src/lib/components/` | Presentation, snippets, local UI state | Fetch, or reach into `page` for mutable state |
 | `src/lib/server/resumes-data.ts` | Every D1 query against `resume` | Touch the `RESUMES` bucket — that lives in `src/routes/api/resumes/` |
 

@@ -94,12 +94,18 @@ Why the deploy command runs migrations: Workers Builds does **not** apply D1 mig
 Putting `db:migrate:remote` in the *deploy* command (not the build command) means migrations run
 for production deploys only — a preview branch will not touch your real database.
 
-Why `bun` works in CI: the Workers Builds image ships **Bun 1.2.15** by default. If you need a
-different version, set a build variable `BUN_VERSION=1.2.15`. See
+Why `bun` works in CI: the Workers Builds image preinstalls Bun under **Tools and languages**, but
+its default is **1.2.15** — older than the 1.4.x this repo was developed against. `BUN_VERSION`
+accepts any version, so add the build variable **`BUN_VERSION=1.4.2`** to make CI match local
+rather than relying on whatever the image happens to ship. Pinning is also the documented way to
+stop a silent image update from changing your build: the image bumps minor versions without
+notice. See
 [Build image](https://developers.cloudflare.com/workers/ci-cd/builds/build-image/).
 
-If the automatic dependency install misbehaves, add build variable `SKIP_DEPENDENCY_INSTALL=1` —
-the build command above already installs explicitly.
+| Build variable | Value | Why |
+|---|---|---|
+| `BUN_VERSION` | `1.4.2` | Matches local; the image default (1.2.15) is older |
+| `SKIP_DEPENDENCY_INSTALL` | `1` — optional | Only if the automatic install misbehaves; the build command above already installs explicitly |
 
 ### 5 · Runtime variables
 

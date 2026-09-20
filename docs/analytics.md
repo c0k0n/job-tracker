@@ -1,7 +1,7 @@
 # Analytics
 
-Five KPI tiles, three charts. All of them are computed **server-side** in one pass over the
-already-loaded row set — the client never re-derives a number.
+Five KPI tiles, three charts, and an agenda. All of them are computed **server-side** in one pass
+over the already-loaded row set — the client never re-derives a number.
 
 ```mermaid
 flowchart LR
@@ -10,6 +10,9 @@ flowchart LR
     A --> K["computeKpis()"]
     A --> F["ConversionFunnel"]
     A --> S["StageDwellChart"]
+    A --> AG["AgendaPanel"]
+    Q --> I["interview[]"]
+    I --> AG
     E["activity_event<br/>90-day window"] --> Q
     E --> V["VelocityChart"]
 ```
@@ -78,12 +81,43 @@ Applications created per week over a **90-day window**. The window is not arbitr
 `activity_event` scan. Unbounded, that query grows with the life of the account; bounded, it costs
 the same on day one and day thousand.
 
+## Agenda
+
+The one panel that is **not** retrospective.
+
+```mermaid
+flowchart TD
+    A["AgendaPanel"] --> B["pending interviews<br/>outcome null or 'pending'"]
+    A --> C["applications with nextActionAt"]
+    B --> D["merge"]
+    C --> D
+    D --> E{"at < midnight today?"}
+    E -- yes --> F["overdue · red · never truncated"]
+    E -- no --> G["upcoming · capped at limit = 6"]
+    F --> H["sort by at, ascending"]
+    G --> H
+```
+
+Funnel, dwell, and velocity all describe what already happened. Nothing on the page answered the
+question someone opens a job tracker with — *what do I do next*. The agenda does, and it does it from
+data the model already had: interviews have `scheduledAt`, applications have `nextActionAt`. No new
+table, no new query; `upcomingInterviews` is already inside the batched rollup.
+
+Two decisions worth keeping:
+
+- **Overdue rows survive the cap.** `slice(0, Math.max(limit, overdue.length))`. The cap exists to
+  stop the panel growing without bound; an overdue item is exactly the reason the panel exists, so
+  hiding one to keep the list tidy would be worse than a long list.
+- **`DAY_START` is computed once, at midnight.** Per-row `Date.now()` comparisons would let a row
+  flip between overdue and upcoming mid-render, and would make the classification depend on what
+  time of day you loaded the page.
+
 ## Why all of this is one query
 
 ```mermaid
 flowchart TD
-    A["5 tiles + 3 charts"] --> B{"one query per widget?"}
-    B -- yes --> C["8 queries · risks the 50-query cap<br/>and burns the 10 ms CPU budget"]
+    A["5 tiles + 3 charts + agenda"] --> B{"one query per widget?"}
+    B -- yes --> C["9 queries · risks the 50-query cap<br/>and burns the 10 ms CPU budget"]
     B -- no --> D["getDashboardData()<br/>1 batched aggregate"]
     D --> E["derivations are pure functions<br/>over the row set"]
 ```

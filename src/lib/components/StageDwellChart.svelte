@@ -114,7 +114,10 @@
 						? `, longest ${row.longest} days`
 						: ''}{row.stalledCount > 0 ? `, ${row.stalledCount} stalled or ghosted` : ''}"
 				>
-					<span class="w-28 shrink-0 text-right font-mono text-[11px] text-muted uppercase">
+					<!-- Fixed-width gutters so the tracks align. Narrowed on
+						phones (w-20) to leave the track enough room to be
+						readable at 320px. -->
+					<span class="w-20 shrink-0 text-right font-mono text-[11px] text-muted uppercase sm:w-28">
 						{row.stage.label}
 					</span>
 
@@ -150,7 +153,7 @@
 						{/if}
 					</div>
 
-					<span class="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums sm:w-28">
+					<span class="w-20 shrink-0 text-right font-mono text-[11px] tabular-nums sm:w-28">
 						<span class="text-fg">
 							{row.apps.length > 0 ? `${row.apps.length} · ${row.longest}d` : '·'}
 						</span>

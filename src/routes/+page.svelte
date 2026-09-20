@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
+	import { enhanceErrorMessage } from '$lib/utils/enhance';
 	import type { ActionData } from './$types';
 
 	type Mode = 'signin' | 'signup';
@@ -16,6 +17,9 @@
 	// a failed sign-up lands the user back on the sign-up tab.
 	let mode: Mode = $state('signin');
 	let submitting = $state(false);
+	/** Set when the POST never reached the server (offline, worker restart).
+	 * Distinct from `formError`, which is a verdict the server returned. */
+	let networkError = $state<string | null>(null);
 	$effect(() => {
 		if (form?.mode === 'signup' || form?.mode === 'signin') {
 			mode = form.mode;
@@ -149,13 +153,22 @@
 		novalidate
 		use:enhance={() => {
 			submitting = true;
-			return async ({ update }) => {
+			networkError = null;
+			return async ({ result, update }) => {
+				// A failed fetch has no field to point at. Applying the
+				// error result would replace the whole page, so report it
+				// in the existing alert region and let the user retry.
+				if (result.type === 'error') {
+					networkError = enhanceErrorMessage(result.error);
+					submitting = false;
+					return;
+				}
 				await update({ reset: false });
 				submitting = false;
 			};
 		}}
 		aria-labelledby={headingId}
-		aria-describedby={formError ? 'auth-form-error' : undefined}
+		aria-describedby={formError || networkError ? 'auth-form-error' : undefined}
 		class="space-y-5"
 	>
 		<!-- Hidden mode field tells the server action which branch to run. -->
@@ -197,7 +210,7 @@
 					value={form?.emailOrUsername ?? ''}
 					aria-invalid={emailError ? 'true' : undefined}
 					aria-describedby={emailError ? 'emailOrUsername-error' : 'emailOrUsername-hint'}
-					class="w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+					class="w-full rounded-md border border-border-strong bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 					class:border-danger={emailError}
 					disabled={submitting}
 					placeholder={mode === 'signin' ? 'ada or ada@example.com' : 'you@example.com'}
@@ -228,7 +241,7 @@
 					required
 					aria-invalid={passwordError ? 'true' : undefined}
 					aria-describedby={passwordError ? 'password-error' : undefined}
-					class="w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+					class="w-full rounded-md border border-border-strong bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 					class:border-danger={passwordError}
 					disabled={submitting}
 				/>
@@ -253,7 +266,7 @@
 						required
 						aria-invalid={confirmError ? 'true' : undefined}
 						aria-describedby={confirmError ? 'confirm-error' : undefined}
-						class="w-full rounded-md border border-border bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
+						class="w-full rounded-md border border-border-strong bg-surface px-3 py-2.5 text-sm text-fg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 						class:border-danger={confirmError}
 						disabled={submitting}
 					/>
@@ -265,14 +278,14 @@
 		</div>
 
 		<!-- Form-level error (mode mismatch, server fault, etc.) -->
-		{#if formError}
+		{#if formError || networkError}
 			<div
 				id="auth-form-error"
 				role="alert"
 				aria-live="polite"
 				class="rounded-md border border-danger bg-danger-bg px-3 py-2.5 text-sm text-danger"
 			>
-				{formError}
+				{formError ?? networkError}
 			</div>
 		{/if}
 

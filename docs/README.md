@@ -1,8 +1,9 @@
 # Documentation
 
 Job tracker is a single-tenant SvelteKit app on Cloudflare Workers free tier. It tracks job
-applications through a stage pipeline, reports conversion, velocity, and dwell time, and keeps a
-per-user resume library on R2 so each application records which version was sent.
+applications through a stage pipeline, reports conversion, velocity, and dwell time, answers "what
+do I do next" with a merged interview-and-follow-up agenda, and keeps a per-user resume library on
+R2 so each application records which version was sent.
 
 **Where to start:** [`architecture.md`](architecture.md) for the shape of the system, then
 [`routes.md`](routes.md) and [`data-model.md`](data-model.md) for the parts you will touch first.

@@ -180,7 +180,7 @@
 			class="relative w-full {sizeClass} rounded-lg border border-border bg-surface text-fg shadow-2xl focus:outline-none"
 		>
 			<!-- Header -->
-			<div class="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+			<div class="flex items-start justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
 				<div class="min-w-0 flex-1">
 					<h2
 						id={titleId}
@@ -217,7 +217,7 @@
 			</div>
 
 			<!-- Body -->
-			<div class="px-6 py-5">
+			<div class="px-4 py-5 sm:px-6">
 				{#if children}
 					{@render children()}
 				{/if}
@@ -226,7 +226,7 @@
 			<!-- Footer (optional) -->
 			{#if footer}
 				<div
-					class="flex flex-wrap items-center justify-end gap-3 rounded-b-lg border-t border-border bg-surface-2 px-6 py-3"
+					class="flex flex-wrap items-center justify-end gap-3 rounded-b-lg border-t border-border bg-surface-2 px-4 py-3 sm:px-6"
 				>
 					{@render footer()}
 				</div>

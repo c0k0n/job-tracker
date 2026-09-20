@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { resolve as resolvePath } from '$app/paths';
 	import { formatDateShort, formatRelative } from '$lib/utils/dates';
+	import { safeEnhance } from '$lib/utils/enhance';
 	import Button from '$lib/components/Button.svelte';
 	import type { PageData } from './$types';
 
@@ -9,6 +10,12 @@
 		$props();
 
 	const pending = $derived(data.pending);
+
+	// Approve/reject post without a page reload, so a dropped request is
+	// reported inline — the default enhance would throw the page at the
+	// error boundary and lose the rest of the queue.
+	let actionError = $state<string | null>(null);
+	const onActionError = (message: string) => (actionError = message);
 </script>
 
 <svelte:head>
@@ -52,6 +59,15 @@
 		</div>
 	{/if}
 
+	{#if actionError}
+		<div
+			role="alert"
+			class="mb-4 rounded-md border border-danger bg-danger-bg px-3 py-2 text-sm text-danger"
+		>
+			{actionError}
+		</div>
+	{/if}
+
 	{#if pending.length === 0}
 		<div class="rounded-lg border border-dashed border-border bg-surface px-6 py-16 text-center">
 			<h2 class="text-lg font-medium text-fg">All caught up</h2>
@@ -82,7 +98,7 @@
 						</div>
 
 						<div class="flex gap-2">
-							<form method="POST" action="?/approve" use:enhance>
+							<form method="POST" action="?/approve" use:enhance={safeEnhance(onActionError)}>
 								<input type="hidden" name="id" value={signup.id} />
 								<Button
 									type="submit"
@@ -93,7 +109,7 @@
 									Approve
 								</Button>
 							</form>
-							<form method="POST" action="?/reject" use:enhance>
+							<form method="POST" action="?/reject" use:enhance={safeEnhance(onActionError)}>
 								<input type="hidden" name="id" value={signup.id} />
 								<Button
 									type="submit"

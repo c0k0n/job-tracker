@@ -5,6 +5,7 @@
 	import Button from './Button.svelte';
 	import { formatSalary } from '$lib/utils/money';
 	import { formatRelative, formatDurationInStage, formatDateShort } from '$lib/utils/dates';
+	import { safeEnhance } from '$lib/utils/enhance';
 
 	interface Props {
 		/** Already-filtered, already-sorted applications to render. */
@@ -39,6 +40,12 @@
 	// one row can be armed at a time.
 	let confirmPurgeId: string | null = $state(null);
 
+	// Row actions post without a page reload, so a failed request has to
+	// be reported here rather than by swapping the page for the error
+	// boundary. See $lib/utils/enhance for why the default isn't enough.
+	let actionError = $state<string | null>(null);
+	const onActionError = (message: string) => (actionError = message);
+
 	function toggleSort(key: SortKey) {
 		const next: ApplicationSort =
 			sort.key === key ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' };
@@ -56,6 +63,14 @@
 </script>
 
 <div class="overflow-hidden rounded-lg border border-border bg-surface">
+	{#if actionError}
+		<p
+			role="alert"
+			class="border-b border-danger bg-danger-bg px-3 py-2 text-sm text-danger sm:px-4"
+		>
+			{actionError}
+		</p>
+	{/if}
 	<div class="overflow-x-auto">
 		<table class="w-full text-left text-sm">
 			<thead class="border-b border-border bg-surface-2 text-fg">
@@ -299,7 +314,12 @@
 						-->
 							{#if trashView}
 								<div class="flex items-center justify-end gap-1.5">
-									<form method="POST" action="?/restore" use:enhance class="contents">
+									<form
+										method="POST"
+										action="?/restore"
+										use:enhance={safeEnhance(onActionError)}
+										class="contents"
+									>
 										<input type="hidden" name="id" value={app.id} />
 										<Button
 											type="submit"
@@ -311,7 +331,12 @@
 										</Button>
 									</form>
 									{#if confirmPurgeId === app.id}
-										<form method="POST" action="?/purge" use:enhance class="contents">
+										<form
+											method="POST"
+											action="?/purge"
+											use:enhance={safeEnhance(onActionError)}
+											class="contents"
+										>
 											<input type="hidden" name="id" value={app.id} />
 											<Button
 												type="submit"
@@ -346,7 +371,12 @@
 									{/if}
 								</div>
 							{:else}
-								<form method="POST" action="?/delete" use:enhance class="contents">
+								<form
+									method="POST"
+									action="?/delete"
+									use:enhance={safeEnhance(onActionError)}
+									class="contents"
+								>
 									<input type="hidden" name="id" value={app.id} />
 									<Button
 										type="submit"

@@ -168,7 +168,7 @@
 				type="search"
 				bind:value={queryInput}
 				placeholder="Search company, role, description, notes…"
-				class="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				class="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 			/>
 		</div>
 
@@ -182,11 +182,11 @@
 						type="button"
 						onclick={() => toggleStage(stage.value)}
 						aria-pressed={active}
-						class="cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="inline-flex min-h-6 cursor-pointer items-center rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 						class:border-accent={active}
 						class:bg-accent={active}
 						class:text-accent-fg={active}
-						class:border-border={!active}
+						class:border-border-strong={!active}
 						class:bg-surface={!active}
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}
@@ -207,11 +207,11 @@
 						type="button"
 						onclick={() => toggleStatus(status.value)}
 						aria-pressed={active}
-						class="cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="inline-flex min-h-6 cursor-pointer items-center rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 						class:border-accent={active}
 						class:bg-accent={active}
 						class:text-accent-fg={active}
-						class:border-border={!active}
+						class:border-border-strong={!active}
 						class:bg-surface={!active}
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}
@@ -232,11 +232,11 @@
 						type="button"
 						onclick={() => toggleArrangement(arrangement.value)}
 						aria-pressed={active}
-						class="cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="inline-flex min-h-6 cursor-pointer items-center rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide uppercase transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 						class:border-accent={active}
 						class:bg-accent={active}
 						class:text-accent-fg={active}
-						class:border-border={!active}
+						class:border-border-strong={!active}
 						class:bg-surface={!active}
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}
@@ -267,11 +267,11 @@
 							aria-label="Filter by tag {facet.tag}, {facet.count} {facet.count === 1
 								? 'application'
 								: 'applications'}"
-							class="cursor-pointer rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+							class="inline-flex min-h-6 cursor-pointer items-center rounded-full border px-2.5 py-1 font-mono text-[11px] tracking-wide transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 							class:border-accent={active}
 							class:bg-accent={active}
 							class:text-accent-fg={active}
-							class:border-border={!active}
+							class:border-border-strong={!active}
 							class:hover:opacity-80={!active}
 							style:background-color={active ? '' : colors.bg}
 							style:color={active ? '' : colors.fg}
@@ -294,11 +294,11 @@
 						type="button"
 						onclick={() => setSort(opt.key)}
 						aria-pressed={active}
-						class="cursor-pointer rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="inline-flex min-h-6 cursor-pointer items-center rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 						class:border-accent={active}
 						class:bg-accent={active}
 						class:text-accent-fg={active}
-						class:border-border={!active}
+						class:border-border-strong={!active}
 						class:bg-surface={!active}
 						class:text-fg={!active}
 						class:hover:bg-surface-2={!active}

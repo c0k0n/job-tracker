@@ -16,6 +16,7 @@
 		type SalaryShapeValue
 	} from '$lib/utils/money';
 	import { toDateInputValue } from '$lib/utils/dates';
+	import { enhanceErrorMessage } from '$lib/utils/enhance';
 	import Button from './Button.svelte';
 	import SalaryInput from './SalaryInput.svelte';
 
@@ -46,6 +47,12 @@
 	// In-flight flag: disables the submit button while the action runs so
 	// a slow response can't turn into duplicate submissions.
 	let submitting = $state(false);
+
+	// A failed fetch is not a validation failure — there is no field to
+	// point at, and applying the error result would replace the whole page
+	// (closing this modal and discarding everything typed). Reported in
+	// the alert region at the bottom of the form instead.
+	let networkError = $state<string | null>(null);
 
 	// Local form state. `application` provides the defaults when editing;
 	// `result.values` is the echo-back from a server-side validation failure.
@@ -163,7 +170,7 @@
 	);
 
 	const inputClass =
-		'w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+		'w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-sm text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 	const labelClass = 'block text-sm font-medium text-fg';
 </script>
 
@@ -172,8 +179,13 @@
 	action={create ? '?/create' : '?/edit'}
 	use:enhance={() => {
 		submitting = true;
+		networkError = null;
 		return async ({ result, update }) => {
 			submitting = false;
+			if (result.type === 'error') {
+				networkError = enhanceErrorMessage(result.error);
+				return;
+			}
 			if (result.type === 'success') {
 				// Server-side success: refresh the dashboard data and hand
 				// the "close me" decision to the host modal. No goto → no
@@ -382,7 +394,15 @@
 		</p>
 	</div>
 
-	{#if formError}
+	{#if networkError}
+		<div
+			role="alert"
+			aria-live="polite"
+			class="rounded-md border border-danger bg-danger-bg px-3 py-2 text-sm text-danger"
+		>
+			{networkError}
+		</div>
+	{:else if formError}
 		<div
 			role="alert"
 			aria-live="polite"

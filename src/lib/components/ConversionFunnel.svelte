@@ -138,7 +138,9 @@
 					: `${item.stage.label}: ${item.count} of the ${item.prevCount} applications that reached the previous stage progressed to at least this stage (${convPct.toFixed(0)}%). This is ${item.pct.toFixed(0)}% of all tracked applications.`}
 				<li class="flex items-center gap-3" title={convTooltip} aria-label={convTooltip}>
 					<!-- Stage label column: fixed width so bars align. -->
-					<span class="w-32 shrink-0 text-right font-mono text-[11px] text-muted uppercase">
+					<!-- Fixed width so bars align; narrower on phones so the
+						bar keeps usable width at 320px. -->
+					<span class="w-24 shrink-0 text-right font-mono text-[11px] text-muted uppercase sm:w-32">
 						{item.stage.label}
 					</span>
 
