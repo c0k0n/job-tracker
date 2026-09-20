@@ -32,17 +32,17 @@ flowchart TD
 | `Modal.svelte` | `open` (bindable), `title` | `subtitle`, `size` (`sm`/`md`/`lg`/`xl`), `hideCloseButton`, `children` snippet | Owns focus trap, Esc, backdrop click. `open` is `$bindable` so parents use `bind:open` |
 | `Button.svelte` | — | `variant`, `size`, `type`, `disabled`, `busy`, `onclick`, `icon` snippet | `busy` swaps in a spinner and sets `aria-busy`; the button stays focusable so the state is announced |
 | `EmptyState.svelte` | `title` | `description`, `action` snippet, `icon` snippet | Used for both "no results" and "no applications yet" |
-| `StatCard.svelte` | `label`, `value` | — | Headline KPI tile |
+| `StatCard.svelte` | `label`, `value` | `sublabel`, `tone` | Headline KPI tile |
 | `FilterBar.svelte` | `filters` (bindable), `sort` (bindable), `hasApplications`, `tagFacets` | — | Hides itself when there is nothing to filter |
-| `ApplicationsTable.svelte` | `rows`, `sort` | `trashView`, `onRowClick`, `onSort`, `resumes` | Rows arrive already filtered and sorted. `resumes` is only used to turn `resumeId` into a filename for the attachment icon's label. In trash view, row actions swap to Restore / Delete permanently |
-| `StatusBadge.svelte` | stage + status | — | Renders the `-100`/`-700` pair for the value |
-| `ApplicationForm.svelte` | — | `application` (edit mode), `create`, `result`, `resumes` | One form for create and edit; `result` carries `page.form` so server-side field errors surface above the fields. The resume `<select>` lists `resumes` with size, and shows `errors.resume` |
+| `ApplicationsTable.svelte` | `rows`, `sort` | `trashView`, `onRowClick`, `onSortChange`, `resumes` | Rows arrive already filtered and sorted. `resumes` is only used to turn `resumeId` into a filename for the attachment icon's label. In trash view, row actions swap to Restore / Delete permanently |
+| `StatusBadge.svelte` | `kind` (`stage`/`status`/`arrangement`), `value` | `variant` (`compact`/`full`) | One prop pair, not two: `kind` picks the lookup table, `value` is the enum member. Renders the `-100`/`-700` pair for the value |
+| `ApplicationForm.svelte` | — | `application` (edit mode), `create`, `result`, `resumes`, `onsuccess` | One form for create and edit; `result` carries `page.form` so server-side field errors surface above the fields. The resume `<select>` lists `resumes` with size, and shows `errors.resume` |
 | `SalaryInput.svelte` | `shape`, `currency`, `exact`, `min`, `max`, `inputClass` | `error` | All money values bindable; shape switches between exact / range / none / unspecified |
 | `ApplicationDetailModal.svelte` | `detail` (`ApplicationDetail \| null`) | `open` (bindable), `form`, `resumes` | Renders timeline, interviews, contacts, and — when `detail.resumeId` resolves to a row in `resumes` — the filename, a download link, and an inline preview |
 | `ResumeLibraryModal.svelte` | `resumes` | `open` (bindable) | Upload (PDF, 10 MB, 20 max), list with size / date / `usedBy`, open, download, two-click delete |
 | `ConversionFunnel.svelte` | `apps` | — | Current-state funnel |
-| `VelocityChart.svelte` | `apps` | `stageMoves` (server-computed, for the transitions line), `windowDays` (default `90`) | Applications per week over a 90-day window |
-| `StageDwellChart.svelte` | `apps` | — | Median days in each live stage |
+| `VelocityChart.svelte` | `apps` | `stageMoves` (server-computed, for the transitions line), `windowDays` (default `90`) | Two **per-day** lines over a 90-day window: applications created on `appliedAt`, and stage transitions from the activity timeline |
+| `StageDwellChart.svelte` | `apps` | — | **Longest** (`Math.max`) days in each live stage, not the median — see [analytics](analytics.md#stage-dwell) |
 | `AgendaPanel.svelte` | `apps`, `interviews`, `onSelect` | `limit` (default `6`) | Merges pending interviews and `nextActionAt` follow-ups into one chronological list. Overdue rows are never truncated away by `limit`. Tapping a row calls `onSelect(id)` and the parent opens the detail modal |
 
 ## Two conventions worth keeping
@@ -52,11 +52,12 @@ flowchart TD
 ```mermaid
 flowchart LR
     D["dashboard<br/>filters, sort, modal open"] -->|"props down"| C["FilterBar, ApplicationsTable"]
-    C -->|"callbacks up:<br/>onSort, onRowClick"| D
+    C -->|"callbacks up:<br/>onSortChange, onRowClick"| D
 ```
 
-Sort lives in the URL, so the table cannot own it — the table receives `sort` and calls `onSort`,
-and the dashboard decides whether that means `replaceState` or a navigation. Same for filters.
+Sort lives in the URL, so the table cannot own it — the table receives `sort` and calls
+`onSortChange`, and the dashboard decides whether that means `replaceState` or a navigation. Same
+for filters.
 
 **2. Server errors travel through `page.form`, not through prop drilling.**
 

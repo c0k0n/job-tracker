@@ -135,8 +135,16 @@ export const rateLimit = sqliteTable('rate_limit', {
 /**
  * Uploaded resume PDFs. The file body lives in the R2 `RESUMES` bucket under
  * `${userId}/${id}.pdf`; this table holds only metadata + ownership, so every
- * read can be scoped by userId. Deleting a user cascades their resume rows —
- * the R2 objects are swept by the same caller.
+ * read can be scoped by userId.
+ *
+ * R2 objects are only ever removed by the caller that owns the row:
+ * `/api/resumes/[id]` DELETE, and the upload rollback in `/api/resumes`
+ * POST. Deleting a *user* cascades their resume rows out of D1 but does not
+ * reach into the bucket — which is safe today only because the one path that
+ * deletes a user (`reject` in /admin/approvals) can only target a disabled
+ * account, and disabled accounts never hold a session, so they cannot have
+ * uploaded anything. If a user delete is ever added for approved accounts,
+ * it has to sweep `${userId}/` from R2 as well.
  *
  * Deliberately no FK on `application.resume_id`: in SQLite that would force
  * drizzle-kit to rebuild the `application` table (drop + recreate + copy), and

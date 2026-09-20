@@ -84,11 +84,11 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Q["?tag=react&sort=company&dir=asc&trash=1&detail=<id>"] --> S["parseFiltersFromUrl()"]
+    Q["?tag=react&sort=company&dir=asc&trash=1&app=<id>"] --> S["parseFiltersFromUrl()"]
     S --> L["load()"]
     L --> D["data.applications"]
     D --> C["client re-filters on change<br/>replaceState — no navigation"]
-    Q --> M["?detail=<id>"] --> G["goto — real navigation,<br/>server fetches the bundle"]
+    Q --> M["?app=<id>"] --> G["goto — real navigation,<br/>server fetches the bundle"]
 ```
 
 Two kinds of state, two mechanisms, and the split is not cosmetic — each `goto` is a Worker
@@ -118,12 +118,16 @@ The `?next=` parameter goes through `safeNextParam`, which rejects anything star
 
 ## The CSV endpoint
 
-`GET /dashboard/export.csv` streams the current filtered view. Two details matter:
+`GET /dashboard/export.csv` returns every **active** application the user owns. It does not
+apply the table's current filters — those live in the URL and the endpoint deliberately ignores
+them, so the export is a stable "everything I am tracking" snapshot rather than whatever happens
+to be on screen. Three details matter:
 
 - **Formula injection.** Any cell starting with `=`, `+`, `-`, or `@` is prefixed so a spreadsheet
   treats it as text, not a formula.
-- **No buffering.** It streams rows rather than building one giant string, which keeps it inside
-  the Worker memory ceiling.
+- **Buffered, and that is fine.** Rows are collected into an array and joined once. At personal
+  scale that is kilobytes, far inside the 128 MB isolate; a true streaming response would add a
+  TransformStream and a second code path for no measurable gain.
 - **Resumes by name, not id.** The `resume` column is the filename looked up from `listResumes()`,
   batched into the same load rather than queried per row. An application whose resume was deleted
   exports an empty cell instead of a dangling id.

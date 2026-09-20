@@ -42,14 +42,15 @@ The URL is the source of truth for dashboard state: filters, sort, and the open 
 | `db/migrations/`      | Drizzle-generated SQL files (the database recipe). Applied to D1 via `wrangler d1 migrations apply` — never hand-edit                                                                                                                                             |
 | `db/scripts/`         | Dev-only: `bun run seed` fills **local** D1 with a test admin + sample data. Never touches the remote DB                                                                                                                                                          |
 | `docs/`               | `docs/README.md` is the index. `docs/*.md` describes **this repo**; `docs/research/*.md` records **vendor** behaviour with citations — the source of truth for stack behavior (see AGENTS.md)                                                                     |
-| `static/`             | Static assets (favicon, robots.txt, `.assetsignore`)                                                                                                                                                                                                              |
+| `src/lib/assets/`     | `favicon.svg`, imported from `+layout.svelte` so Vite hashes it. Deliberately not in `static/`, which is served unhashed                                                                                                                                          |
+| `static/`             | Files served as-is, unhashed: `robots.txt` and `.assetsignore`                                                                                                                                                                                                    |
 
 ### Key design decisions
 
 - **Request-scoped everything.** Better Auth and Drizzle instances are built per request from `event.platform.env` (env bindings don't exist at module init on Workers).
 - **Approval gate is server-owned.** The `disabled` field is `input: false`; only a server-side database hook writes it. Clients can't self-approve.
 - **Money = integer minor units.** Salaries stored as JSON `{min, max, currency}` in integer minor units — never floats.
-- **Free tier only.** Two bindings, both free: D1 for rows, R2 for resume bytes (10 GB, zero egress). No KV/DO/Queues. Resume reads are proxied by the Worker — the bucket is never public and no presigned URL is ever issued.
+- **Free tier only.** Three bindings, all free: `DB` (D1) for rows, `RESUMES` (R2) for resume bytes, `ASSETS` for hashed static output. No KV/DO/Queues. Resume reads are proxied by the Worker — the bucket is never public and no presigned URL is ever issued.
 - **Bytes and metadata are written in that order, and cleaned up together.** R2 gets the object first; if the D1 row then fails, the object is deleted. A resume row is the only pointer to its object.
 - **Flat migrations under `db/`.** drizzle-kit 0.31 emits `db/migrations/NNNN_name.sql`; `wrangler.jsonc` uses `migrations_pattern: 'db/migrations/*.sql'`. `db/scripts/` holds the local-only seed.
 - **Two border weights, because WCAG 1.4.11 only covers interactive edges.** `--color-border` is a decorative hairline (card edges, section rules) and stays light; `--color-border-strong` is the boundary that _identifies_ an input, chip, or outline button, so it clears 3:1 on every surface. Darkening every hairline instead would flatten the whole design.

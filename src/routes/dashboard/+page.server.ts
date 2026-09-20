@@ -52,13 +52,14 @@ export const load: PageServerLoad = async ({ locals, platform, url }) => {
 	// active set — they don't make sense for trashed rows.
 	const trashView = url.searchParams.get('trash') === '1';
 
-	// One D1 round-trip for every dashboard rollup (active list, trash
-	// count, upcoming interviews, stage moves) — the queries are
-	// independent, so Promise.all + D1's session reuse issues them
-	// together instead of sequentially (free-tier CPU + latency win).
-	// Resumes ride in the same batch as the rollups rather than becoming a
-	// second sequential await: the library modal, the create form's picker
-	// and the table's attachment icons all need them on every load.
+	// Every dashboard rollup (active list, trash count, upcoming
+	// interviews, stage moves) in one call rather than one per widget. The
+	// queries are independent, so Promise.all issues them concurrently —
+	// that is a wall-clock win, not a CPU one, because waiting on D1 does
+	// not count toward the Worker's CPU budget.
+	// Resumes ride alongside instead of becoming a second sequential
+	// await: the library modal, the create form's picker and the table's
+	// attachment icons all need them on every load.
 	const [{ active, trashedCount, upcomingInterviews, stageMoves }, resumes] = await Promise.all([
 		getDashboardData(db, locals.user.id, 30),
 		listResumes(db, locals.user.id)
@@ -109,11 +110,20 @@ function pickEnum<T extends string>(form: FormData, key: string, allowed: readon
 function sanitizePostingUrl(raw: string): string | null {
 	const trimmed = raw.trim();
 	if (!trimmed) return null;
-	try {
-		const url = new URL(trimmed);
-		if (url.protocol === 'http:' || url.protocol === 'https:') return url.toString();
-	} catch {
-		// fall through
+	// People paste `linkedin.com/jobs/view/123` far more often than
+	// `https://…`. Rejecting a bare host would silently throw the link away
+	// (the old behaviour returned null and the field just came back empty),
+	// so try it once with https:// before giving up.
+	for (const candidate of [trimmed, `https://${trimmed}`]) {
+		try {
+			const url = new URL(candidate);
+			if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
+			// A host without a dot is almost certainly a typo, not a URL.
+			if (!url.hostname.includes('.')) continue;
+			return url.toString();
+		} catch {
+			// try the next candidate
+		}
 	}
 	return null;
 }

@@ -11,6 +11,7 @@
  */
 
 import { getDb } from '$lib/server/db';
+import { cspWithFrameAncestors } from '$lib/server/security';
 import { deleteResume, getResumeForUser } from '$lib/server/resumes-data';
 import { RESUME_CONTENT_TYPE } from '$lib/constants/resumes';
 import type { RequestHandler } from './$types';
@@ -40,10 +41,18 @@ export const GET: RequestHandler = async ({ locals, platform, params, url }) => 
 		// Private, per-user documents: never let a shared cache hold them.
 		'Cache-Control': 'private, no-store',
 		'X-Content-Type-Options': 'nosniff',
-		// hooks.server.ts stamps DENY on everything, but it skips headers a
-		// route already set — the detail modal previews this in a same-origin
-		// iframe, which DENY would break.
-		'X-Frame-Options': 'SAMEORIGIN'
+		// The detail modal previews this in a same-origin <iframe>.
+		//
+		// Both framing headers have to be set *here*, because hooks.server.ts
+		// only fills headers a route left unset, and its global policy is
+		// `frame-ancestors 'none'`. X-Frame-Options alone is not enough: when
+		// a response carries a CSP `frame-ancestors` directive, browsers
+		// enforce that and ignore X-Frame-Options — so the global 'none' would
+		// silently block the preview. Sending SAMEORIGIN keeps the behaviour
+		// correct on any browser that prefers XFO, and this CSP (identical to
+		// the global one except for frame-ancestors) covers the rest.
+		'X-Frame-Options': 'SAMEORIGIN',
+		'Content-Security-Policy': cspWithFrameAncestors("'self'")
 	});
 	return new Response(object.body, { headers });
 };

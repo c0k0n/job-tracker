@@ -5,7 +5,7 @@ over the already-loaded row set — the client never re-derives a number.
 
 ```mermaid
 flowchart LR
-    D[("D1")] --> Q["getDashboardData()<br/>one batched aggregate"]
+    D[("D1")] --> Q["getDashboardData()<br/>4 concurrent queries"]
     Q --> A["applications[]"]
     A --> K["computeKpis()"]
     A --> F["ConversionFunnel"]
@@ -22,7 +22,7 @@ flowchart LR
 | Tile | Definition | Excludes |
 |---|---|---|
 | **Active** | Any row whose status is not `closed` | Rejected, withdrawn, accepted |
-| **Interviews (next 30 days)** | Rows in `interview` with `outcome` null or `pending`, scheduled within 30 days | Anything already `passed` / `failed` / `cancelled` |
+| **Interviews (next 30 days)** | Rows in `interview` with `outcome = 'pending'`, scheduled from 24 h ago to 30 days out | Anything already `passed` / `failed` / `cancelled` |
 | **Offers pending** | Rows at stage `offer` with an open status | Closed offers |
 | **Applied this month** | `appliedAt` inside the current calendar month | Everything else |
 | **Needs attention** | Status `stalled` or `ghosted` | — |
@@ -61,7 +61,7 @@ does not exist yet.
 
 ## Stage dwell
 
-Median days in each live stage, anchored on `stageChangedAt`.
+**Longest** wait in each live stage, anchored on `stageChangedAt`.
 
 ```mermaid
 flowchart LR
@@ -72,11 +72,15 @@ flowchart LR
 `accepted`, `rejected`, and `withdrawn` are excluded — they are outcomes, not places you wait.
 `saved` is included, because time spent sitting saved before applying is a real stalling signal.
 
-Median, not mean: one application that sat for 400 days would drag a mean somewhere useless.
+`longest` (`Math.max` over the stage's rows), not mean and not median: one application that sat for
+400 days would drag a mean somewhere useless, and with the handful of rows a personal tracker holds
+a median would collapse to whichever single application happens to sit in the middle. The longest
+wait is the number that actually prompts action.
 
 ## Velocity
 
-Applications created per week over a **90-day window**. The window is not arbitrary —
+A **per-day** series over a 90-day window, with two lines: applications applied
+(`appliedAt`) and stage transitions (from `activity_event`). The 90 days are not arbitrary —
 `STAGE_MOVES_WINDOW_DAYS` in `applications-data.ts` is the same 90, and it exists to bound the
 `activity_event` scan. Unbounded, that query grows with the life of the account; bounded, it costs
 the same on day one and day thousand.
@@ -87,7 +91,7 @@ The one panel that is **not** retrospective.
 
 ```mermaid
 flowchart TD
-    A["AgendaPanel"] --> B["pending interviews<br/>outcome null or 'pending'"]
+    A["AgendaPanel"] --> B["pending interviews<br/>outcome = 'pending'"]
     A --> C["applications with nextActionAt"]
     B --> D["merge"]
     C --> D
@@ -101,7 +105,7 @@ flowchart TD
 Funnel, dwell, and velocity all describe what already happened. Nothing on the page answered the
 question someone opens a job tracker with — *what do I do next*. The agenda does, and it does it from
 data the model already had: interviews have `scheduledAt`, applications have `nextActionAt`. No new
-table, no new query; `upcomingInterviews` is already inside the batched rollup.
+table, no new query; `upcomingInterviews` comes out of the same rollup.
 
 Two decisions worth keeping:
 
@@ -112,16 +116,17 @@ Two decisions worth keeping:
   flip between overdue and upcoming mid-render, and would make the classification depend on what
   time of day you loaded the page.
 
-## Why all of this is one query
+## Why all of this is one row set
 
 ```mermaid
 flowchart TD
     A["5 tiles + 3 charts + agenda"] --> B{"one query per widget?"}
     B -- yes --> C["9 queries · risks the 50-query cap<br/>and burns the 10 ms CPU budget"]
-    B -- no --> D["getDashboardData()<br/>1 batched aggregate"]
+    B -- no --> D["getDashboardData()<br/>4 concurrent queries"]
     D --> E["derivations are pure functions<br/>over the row set"]
 ```
 
-`getDashboardData` returns the row set once; `computeKpis` and the chart components are pure
+`getDashboardData` runs four independent D1 queries concurrently (`Promise.all`) and
+returns the row set once; `computeKpis` and the chart components are pure
 functions over it. That is what keeps the dashboard inside the free-tier CPU ceiling — see
 [free-tier-budget.md](free-tier-budget.md).

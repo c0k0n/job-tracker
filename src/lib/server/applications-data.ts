@@ -310,7 +310,10 @@ export async function addInterview(
 			withName: input.withName,
 			withRole: input.withRole,
 			notes: input.notes,
-			outcome: input.outcome ?? null,
+			// A newly scheduled interview has no result yet, and 'pending' is
+			// what the dashboard's upcoming-interview query filters on — with
+			// null here the row would exist but never surface in the agenda.
+			outcome: input.outcome ?? 'pending',
 			createdAt: new Date()
 		})
 		.returning()
@@ -384,10 +387,17 @@ export interface StageMoveEvent {
 export const STAGE_MOVES_WINDOW_DAYS = 90;
 
 /**
- * One D1 round-trip for the dashboard rollups (list, trash count,
- * upcoming interviews, stage moves). D1's batched statements share a
- * single HTTP session — 4 sequential queries become 1 round-trip
- * (docs/research/drizzle.md "D1's prepared-statement batching").
+ * The dashboard rollups (active list, trash count, upcoming interviews,
+ * stage moves) in one call instead of one per widget.
+ *
+ * These are four independent D1 queries issued concurrently with
+ * `Promise.all`, not a `db.batch()`. That is a deliberate choice: drizzle's
+ * `batch()` needs the statements up front and returns positional results,
+ * which would make this harder to read for no measurable win, since D1 bills
+ * rows scanned rather than round-trips and the free plan allows 50 queries
+ * per invocation. The saving over a query per widget is real (4, not 9);
+ * the saving over *sequential* queries is wall-clock only — the queries are
+ * I/O, so they do not compete for the CPU budget either way.
  */
 export async function getDashboardData(
 	db: Db,

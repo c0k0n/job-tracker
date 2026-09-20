@@ -1,8 +1,16 @@
 # Data model
 
-Ten tables in one D1 database, plus one R2 bucket. Four tables belong to Better Auth; six belong
-to the app. Every app table cascades from `user`, so a deleted account takes its whole subtree
-with it — and `resume` is the only table whose rows point at bytes that live somewhere else.
+Ten tables in one D1 database, plus one R2 bucket. Five belong to Better Auth (`user`, `session`,
+`account`, `verification`, `rate_limit`); five belong to the app (`application`, `interview`,
+`contact`, `activity_event`, `resume`). Every app table reaches `user` through a cascade — the
+three child tables via `application` — so deleting an account takes its whole subtree of rows with
+it.
+
+The one thing a cascade cannot do: `resume` is the only table whose rows point at bytes that live
+somewhere else. Dropping the row does not drop the R2 object. Only `/api/resumes/[id]` DELETE and
+the upload rollback touch the bucket, so deleting a *user* can leave objects behind. That is
+currently unreachable — `/admin/approvals` rejects pending accounts, which have never been able to
+upload — but it is not enforced by the schema.
 
 ```mermaid
 erDiagram
@@ -49,7 +57,23 @@ erDiagram
         text key PK
         blob body "R2 · RESUMES"
     }
+    verification {
+        text id PK
+        text identifier "no FK — email or handle"
+        text value "token"
+        timestamp expires_at
+    }
+    rate_limit {
+        text id PK
+        text key UK "no FK — id or IP + route"
+        integer count
+        integer last_request "unix ms"
+    }
 ```
+
+The last two are Better Auth's and stand alone: `verification` is keyed by `identifier` and
+`rate_limit` by an opaque `key` string, so neither carries a foreign key. They are drawn detached
+because attaching them to `user` would invent a constraint that does not exist.
 
 ## The tables
 

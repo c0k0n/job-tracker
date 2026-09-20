@@ -11,7 +11,7 @@
  * the library can warn before a delete detaches live applications.
  */
 
-import { and, count, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, isNotNull, sql } from 'drizzle-orm';
 import type { Db } from './db';
 import { application, resume, rowToResume } from './db/schema';
 import type { Resume } from '$lib/types';
@@ -113,30 +113,4 @@ export async function deleteResume(db: Db, userId: string, id: string): Promise<
 		.where(and(eq(resume.id, id), eq(resume.userId, userId)))
 		.run();
 	return target;
-}
-
-/**
- * Applications currently attached to a resume (active rows only). Used by
- * the detail side of the relationship — "which resume did I send here".
- */
-export async function applicationsUsingResume(
-	db: Db,
-	userId: string,
-	resumeId: string
-): Promise<{ id: string; company: string; role: string }[]> {
-	return db
-		.select({
-			id: application.id,
-			company: application.company,
-			role: application.role
-		})
-		.from(application)
-		.where(
-			and(
-				eq(application.userId, userId),
-				eq(application.resumeId, resumeId),
-				isNull(application.deletedAt)
-			)
-		)
-		.all();
 }

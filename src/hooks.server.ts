@@ -21,45 +21,7 @@ import { building } from '$app/environment';
 import type { Handle } from '@sveltejs/kit';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
 import { getAuth } from '$lib/server/auth';
-
-/**
- * Baseline response headers applied to every response, SSR and static
- * asset alike.
- *
- * The CSP is deliberately not strict: SvelteKit emits inline `<script>`
- * and `<style>` chunks (and the dashboard sets inline `style="width: …"`
- * attributes for its chart bars), so `'unsafe-inline'` is required in both
- * directives or the app stops rendering. `frame-src 'self'` covers the detail
- * modal's resume preview, which is our own /api/resumes/[id] response rather
- * than a third-party document. Everything else is locked down. Note that
- * `X-Frame-Options: DENY` would block that same iframe, so the resume route
- * sets SAMEORIGIN itself and this hook leaves an existing header alone.
- * See docs/security.md.
- */
-const SECURITY_HEADERS: Record<string, string> = {
-	'X-Content-Type-Options': 'nosniff',
-	'Referrer-Policy': 'strict-origin-when-cross-origin',
-	'X-Frame-Options': 'DENY',
-	'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
-	'Cross-Origin-Opener-Policy': 'same-origin',
-	'Content-Security-Policy': [
-		"default-src 'self'",
-		"script-src 'self' 'unsafe-inline'",
-		"style-src 'self' 'unsafe-inline'",
-		"img-src 'self' data: blob:",
-		"font-src 'self' data:",
-		"connect-src 'self'",
-		// Resume previews are same-origin PDFs streamed from R2 via
-		// /api/resumes/[id], so 'self' is both correct and tighter than the
-		// old `frame-src https:` (which had to allow any host, and would not
-		// even have matched plain-http local dev).
-		"frame-src 'self'",
-		"object-src 'none'",
-		"base-uri 'self'",
-		"form-action 'self'",
-		"frame-ancestors 'none'"
-	].join('; ')
-};
+import { SECURITY_HEADERS } from '$lib/server/security';
 
 function applySecurityHeaders(response: Response): void {
 	for (const [key, value] of Object.entries(SECURITY_HEADERS)) {

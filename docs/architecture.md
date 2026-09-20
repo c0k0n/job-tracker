@@ -53,11 +53,16 @@ flowchart TD
 | Directory | Owns | Must never |
 |---|---|---|
 | `src/routes/` | Reading the URL, calling the data layer, returning view models | Contain SQL, or know about money formatting |
-| `src/lib/server/applications-data.ts` | Every D1 query in the app | Be imported from a `.svelte` file |
+| `src/lib/server/applications-data.ts` | Every D1 query against `application`, `interview`, `contact`, `activity_event` | Be imported from a `.svelte` file |
 | `src/lib/server/db/schema.ts` | Table shape **and** the ISO-string ↔ unix-seconds conversion | Be bypassed by a raw `sql` query elsewhere |
 | `src/lib/utils/` | Pure transformations, no I/O (including `enhance.ts`, which only inspects a submit result) | Import from `$lib/server` |
 | `src/lib/components/` | Presentation, snippets, local UI state | Fetch, or reach into `page` for mutable state |
 | `src/lib/server/resumes-data.ts` | Every D1 query against `resume` | Touch the `RESUMES` bucket — that lives in `src/routes/api/resumes/` |
+
+The auth tables are the exception to "the data layer owns every query": Better Auth writes `user`,
+`session`, `account`, `verification`, and `rate_limit` through its own Drizzle adapter, not through
+these two files. Nothing in `src/lib/server/` reads or writes those rows directly either —
+`hooks.server.ts` and the admin routes go through `auth.api`.
 
 ## One request, end to end
 
@@ -81,7 +86,7 @@ sequenceDiagram
     end
     H->>L: resolve(event)
     L->>Q: getDashboardData(db, userId, filters)
-    Q->>D: batched aggregate
+    Q->>D: 4 concurrent queries
     D-->>Q: rows
     Q-->>L: view model
     L-->>H: data

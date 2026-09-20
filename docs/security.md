@@ -11,8 +11,9 @@ header the route has not already set, so a route can always override.
 | Header | Value | Stops |
 |---|---|---|
 | `Content-Security-Policy` | `default-src 'self'` … | Script and asset injection |
+| `Strict-Transport-Security` | `max-age=31536000` | Cleartext downgrade on a later visit |
 | `X-Content-Type-Options` | `nosniff` | MIME sniffing |
-| `X-Frame-Options` | `DENY` (resume route sets `SAMEORIGIN`) | Clickjacking |
+| `X-Frame-Options` | `DENY` (resume route sets `SAMEORIGIN`) | Clickjacking in browsers that ignore CSP |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | URL leakage to third parties |
 | `Cross-Origin-Opener-Policy` | `same-origin` | Cross-window tampering |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), interest-cohort=()` | Unused capabilities, FLoC |
@@ -29,14 +30,34 @@ flowchart LR
 ```
 
 Resume PDFs are served by this app, not by a third party, so `frame-src` narrowed from `https:` to
-`'self'`. The global `X-Frame-Options: DENY` would break that same-origin iframe, so
-`GET /api/resumes/[id]` sets `SAMEORIGIN` itself — `hooks.server.ts` only writes headers the route
-has not already set, which is why the override works without a special case.
+`'self'`. That leaves one real problem: the app embeds the PDF in an `<iframe>` inside the detail
+modal, and the global CSP says `frame-ancestors 'none'`, which blocks it.
+
+```mermaid
+flowchart LR
+    A["global CSP<br/>frame-ancestors 'none'"] --> B["GET /api/resumes/[id]<br/>embedded in a same-origin iframe"]
+    B --> C["browser refuses to render<br/>the PDF — preview silently blank"]
+    C --> D["route overrides just that one directive<br/>frame-ancestors 'self'"]
+    D --> E["src/lib/server/security.ts<br/>cspWithFrameAncestors()"]
+```
+
+The fix lives in `src/lib/server/security.ts`, which owns the directive list so one value can be
+overridden without retyping the rest. `GET /api/resumes/[id]` calls
+`cspWithFrameAncestors("'self'")`; every other response uses the base `'none'`.
+
+Worth being precise about `X-Frame-Options`, because the obvious reading is wrong:
+
+- `object-src 'none'` blocks `<object>` and `<embed>`. Per spec it does **not** reliably block
+  `<iframe>`, so it is not what protects that preview.
+- When a response carries a CSP `frame-ancestors`, browsers enforce **that** and ignore
+  `X-Frame-Options` entirely. So setting `SAMEORIGIN` on the resume route fixes nothing on its
+  own — it is there only for the browsers and scanners that do not speak CSP.
+- The directive that actually decides whether the preview renders is `frame-ancestors`.
 
 Tightening this means moving to nonce- or hash-based CSP, which needs SvelteKit's
 `csp.directives` config rather than a header in `hooks.server.ts`. Worth doing; not free.
 
-## The four tenancy guarantees
+## The five tenancy guarantees
 
 ```mermaid
 flowchart TD
@@ -64,7 +85,7 @@ flowchart TD
 | Surface | Defence |
 |---|---|
 | Password | Length 8-128, hashed by Better Auth; never logged |
-| Sign-in identifier | Length 3-254; sign-up requires a real `@` email |
+| Sign-in identifier | Length 3-254. Sign-up additionally requires an `@` (it keys the account on an email and derives the sign-in handle from the local part). That is a presence check, not a full RFC 5322 parse — the authoritative accept/reject is Better Auth's own email validation on the server |
 | Redirect targets | `safeNextParam` rejects `//` and `/\` — both are protocol-relative in a browser |
 | Uploaded file type | The client's `Content-Type` is attacker-controlled, so the first five bytes must be `%PDF-`. The filename is display-only and never becomes a path |
 | Uploaded file size | `content-length` is checked before the body is read (413); a 10 MB cap re-checks the real bytes |

@@ -13,6 +13,16 @@ declare global {
 	 */
 	interface Env {
 		BETTER_AUTH_URL?: string;
+		/**
+		 * Declared here, not just in the generated `worker-configuration.d.ts`.
+		 * Wrangler derives that file from wrangler.jsonc *plus* `.dev.vars`,
+		 * and `.dev.vars` is gitignored — so a fresh clone that regenerates
+		 * types before creating `.dev.vars` would lose this key and
+		 * `auth.ts` would stop type-checking. Declaring it makes the repo
+		 * self-consistent either way; the two declarations are identical, so
+		 * they merge instead of colliding.
+		 */
+		BETTER_AUTH_SECRET: string;
 	}
 
 	namespace App {

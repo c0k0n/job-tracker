@@ -21,7 +21,7 @@ flowchart TD
     N["R2 free tier"] --> O["10 GB storage"]
     N --> P["1 M Class A / month<br/>10 M Class B / month"]
     N --> Q["zero egress"]
-    B -->|"BINDS"| J["batched dashboard aggregate"]
+    B -->|"BINDS"| J["dashboard rollup"]
     G -->|"BINDS"| J
     C -->|"headroom 1000x"| K["shallow routing keeps<br/>filter state off the wire"]
     H -->|"headroom large"| L["hard deletes, no row history"]
@@ -52,7 +52,7 @@ orders of magnitude of headroom for a single-user application.
 flowchart LR
     subgraph budget["10 ms CPU · 50 D1 queries"]
         direction TB
-        A["getDashboardData()"] --> B["ONE batched aggregate"]
+        A["getDashboardData()"] --> B["4 concurrent queries"]
         B --> C["computeKpis() — pure, no I/O"]
         B --> D["charts — pure, no I/O"]
     end
@@ -61,7 +61,7 @@ flowchart LR
 
 | Decision | Buys |
 |---|---|
-| One batched aggregate, not a query per widget | Keeps D1 queries in single digits and CPU at ~2-3 ms |
+| One rollup instead of a query per widget | Keeps D1 queries in single digits (9 widgets would be 9) |
 | The agenda reuses `upcomingInterviews` from that same rollup | The one *prospective* panel costs zero extra queries — it is pure derivation over data already fetched |
 | `STAGE_MOVES_WINDOW_DAYS = 90` | The `activity_event` scan costs the same on day 1 and day 1000 |
 | `session.cookieCache` (5 min, `compact`) | Session reads skip D1 entirely on most requests |
@@ -71,7 +71,46 @@ flowchart LR
 | No polling, no websockets, no background jobs | Request count stays proportional to actual use |
 | Resume bytes in R2, metadata in D1 | 200 MB ceiling per user against a 10 GB bucket, and egress is free |
 | Resume PDFs proxied by the Worker, not a public bucket | No presigned URL to leak; a read is one Class B op, which is 10 M/month |
-| Upload rejected on `content-length` before the body is read | A 500 MB POST never reaches R2 or the CPU budget |
+| Upload rejected on `content-length` before the body is read | An oversized POST never reaches R2 or the CPU budget |
+
+## The one request that does not fit: sign-in
+
+Everything above is about keeping *page loads* small, and that part works. But there is one route
+where the 10 ms ceiling is not something a design decision can buy back.
+
+```mermaid
+flowchart LR
+    A["POST / sign-in"] --> B["scrypt N=16384 r=16"]
+    B --> C["~85 ms CPU"]
+    C --> D{"free ceiling<br/>10 ms?"}
+    D -- yes --> E["Error 1102<br/>exceededCpu"]
+```
+
+Better Auth hashes passwords with scrypt at `N=16384, r=16, dkLen=64`
+(`@better-auth/utils` → `password.node.mjs`). Measured on a desktop CPU that is **~85–95 ms** of
+pure compute — and unlike the D1 round-trips above, hashing is CPU, so it counts. Cloudflare's own
+limits page says as much: *"Heavier workloads that handle authentication, server-side rendering, or
+parse large payloads typically use 10-20 ms."*
+
+What that means in practice:
+
+- **Page loads are fine.** With `session.cookieCache` on, a normal dashboard request verifies a
+  signed cookie instead of touching D1, and the SSR pass is a few ms.
+- **Sign-in and sign-up are the risk.** They are roughly 9× over the documented ceiling.
+- Cloudflare gives each isolate slack for *occasional* overruns and only terminates a Worker that
+  "starts hitting the limit consistently" — so logins will usually succeed. When they don't, the
+  symptom is **Error 1102 / `Worker exceeded resource limits`** on the sign-in POST.
+
+If you see that, in order of preference:
+
+1. **Move to Workers Paid** ($5/month) — the CPU ceiling goes from 10 ms to 30 s. This is the
+   honest fix, and it is the only one that keeps the password hashing as strong as it is.
+2. **Lower the scrypt cost** via `emailAndPassword.password.hash` / `.verify` in `auth.ts`.
+   Halving `N` halves the time; you would need to go much lower than is comfortable to fit 10 ms,
+   which is a real security trade, not a free win.
+
+Do not "fix" it by caching sessions harder — the cost is in the password verify, which only runs
+when someone actually logs in.
 
 ## What would break it, and what to do instead
 

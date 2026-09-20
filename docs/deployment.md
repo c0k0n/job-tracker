@@ -190,6 +190,29 @@ SQL will not be applied until it lands on `main`.
 | Auth works locally, fails in prod | `BETTER_AUTH_URL` pinned to localhost | Unset it; it is now inferred per request |
 | New tables missing in prod | Migrations not run | `db:migrate:remote` is in the deploy command — check the build log |
 | `bun: command not found` in build | Bun missing or renamed | Set build variable `BUN_VERSION` |
+| Sign-in or sign-up returns **1102**, but page loads are fine | The password hash costs more CPU than the free tier allows | Read [free-tier-budget.md](free-tier-budget.md#the-one-request-that-does-not-fit-sign-in) before changing anything |
+
+## The one thing to know before you go live
+
+Everything in this app fits the Workers free tier except **one request**: sign-in and sign-up.
+Password verification is scrypt at `N=16384, r=16`, which measures at roughly 85–95 ms of CPU.
+The free tier allows **10 ms** per request. Normal page loads are nowhere near the ceiling — they
+mostly wait on D1, and waiting does not count as CPU — but a sign-in is about nine times over.
+
+```mermaid
+flowchart LR
+    A["page load<br/>~1-3 ms CPU"] --> B["well inside 10 ms"]
+    C["sign-in / sign-up<br/>~85-95 ms CPU"] --> D["Error 1102<br/>exceededCpu"]
+```
+
+Cloudflare gives isolates slack for occasional overruns and only terminates a Worker that is
+hitting the limit consistently, so this may well never surface for a handful of users. But if you
+see 1102 on the auth page and nowhere else, that is the cause, not a bug in the app.
+
+The two ways out are in [free-tier-budget.md](free-tier-budget.md#the-one-request-that-does-not-fit-sign-in):
+Workers Paid, which removes the ceiling entirely, or a cheaper scrypt cost via a custom
+`password.hash` / `password.verify` — which is a genuine security trade, not a free win, so it is
+documented there rather than recommended here.
 
 ## Rollback
 
