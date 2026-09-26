@@ -24,7 +24,7 @@ placeholder values) is tracked.
 ## What is enforced
 
 Session cookies are `HttpOnly` + `Secure`, signed and verified server-side — a forged cookie does
-not produce a session. Every data-layer query filters on the acting user's id. The `disabled` and
+not produce a session. Every list query and every write filters on the acting user's id in SQL; the six single-row-by-id reads assert ownership in JS before returning or writing. Either way a foreign row is unreachable. The `disabled` and
 `role` fields are server-owned and cannot be set from a client payload. Response headers include a
 content security policy, `X-Frame-Options: DENY`, `nosniff`, and a locked-down permissions policy.
 

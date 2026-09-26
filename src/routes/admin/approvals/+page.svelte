@@ -82,7 +82,7 @@
 							<div class="flex items-baseline gap-2">
 								<h3 class="text-base font-semibold text-fg">{signup.username}</h3>
 								<span class="text-xs text-muted">
-									applied {formatRelative(signup.requestedAt)} · {formatDateShort(
+									requested {formatRelative(signup.requestedAt)} · {formatDateShort(
 										signup.requestedAt
 									)}
 								</span>

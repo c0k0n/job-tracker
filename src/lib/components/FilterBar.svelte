@@ -30,6 +30,31 @@
 
 	let queryInput = $state(filters.q);
 
+	/**
+	 * The last value this component pushed up into `filters`.
+	 *
+	 * The input is the local echo while the user types; `filters.q` is the
+	 * committed value, and it is also written from outside — a real
+	 * navigation re-runs the dashboard load, which hands the page a fresh
+	 * `data.filters`, and the page assigns it wholesale. Without this guard
+	 * the input ignored those external changes and showed stale text over a
+	 * correctly-filtered table.
+	 *
+	 * Comparing against `pushed` rather than against `queryInput` is what
+	 * keeps the two directions from fighting: mid-debounce, `filters.q` is
+	 * legitimately behind what the user has typed, and syncing on that
+	 * difference would erase their keystrokes.
+	 */
+	let pushed = filters.q;
+
+	$effect(() => {
+		const q = filters.q;
+		if (q !== pushed) {
+			pushed = q;
+			queryInput = q;
+		}
+	});
+
 	// Push debounced updates from the local input back to the parent's
 	// filters.q. Debounced so the user can type without re-running the
 	// filter on every keystroke (which would feel laggy with 18+ rows).
@@ -40,6 +65,7 @@
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {
 			if (next !== filters.q) {
+				pushed = next;
 				filters = { ...filters, q: next };
 			}
 		}, 150);

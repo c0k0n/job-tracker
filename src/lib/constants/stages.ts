@@ -23,7 +23,6 @@ interface StageMeta {
 		| 'stage-progress'
 		| 'stage-late'
 		| 'stage-offer'
-		| 'stage-terminal'
 		| 'stage-closed';
 }
 

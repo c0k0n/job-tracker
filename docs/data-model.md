@@ -29,12 +29,17 @@ erDiagram
         text email UK
         boolean disabled "approval gate"
         text role "admin plugin"
+        boolean banned "admin plugin"
+        text ban_reason "admin plugin, nullable"
+        timestamp ban_expires "admin plugin, nullable"
+        text display_username "username plugin"
     }
     application {
         text id PK
         text user_id FK
         text stage
         text status
+        text work_arrangement
         text salary "JSON blob"
         text resume_id "nullable, no FK"
         timestamp deleted_at "soft delete"
@@ -115,7 +120,8 @@ The one table that carries real domain weight.
 |---|---|---|
 | `stage` | enum | `saved → applied → phone_screen → technical → onsite → final → offer → accepted / rejected / withdrawn` |
 | `status` | enum | Independent of stage: `active`, `stalled`, `ghosted`, `paused`, `closed` |
-| `salary` | JSON text | A 4-way union (exact / range / none / unspecified), money as **integer minor units** |
+| `workArrangement` | enum | `remote`, `hybrid`, `onsite`, `unspecified`. A first-class field, not derived: it is a filter dimension, a table column, a badge, and a CSV column |
+| `salary` | JSON text | A 4-way union (exact / range / min_only / max_only), money as **integer minor units**. `null` means "not specified" — the form's fifth shape, `none`, stores `NULL` rather than a sentinel |
 | `tags` | JSON text | `string[]`, defaulted to `'[]'` in SQL so a raw insert still satisfies `notNull` |
 | `appliedAt` / `stageChangedAt` / `nextActionAt` | unix seconds | `stageChangedAt` is the dwell-time anchor |
 | `deletedAt` | unix seconds, nullable | Non-null means **in trash**; `restore` clears it, `purge` deletes the row |
@@ -165,17 +171,26 @@ columns plus a discriminator. Inside the blob, every amount is an **integer in m
 `12_500_000` is ¥125,000.00, not `125000.0`. Parsing and formatting live in
 `src/lib/utils/money.ts`; `parseSalaryFromForm` is the only entry point from user input.
 
+`currency` is a closed union of **32 ISO-4217 codes**, declared in `src/lib/types.ts` and backed by
+`src/lib/constants/currencies.ts`, which also carries each one's `minorUnits` exponent and locale.
+That exponent is load-bearing rather than decorative: JPY, KRW, and VND have **zero** minor units,
+so their stored integers are already whole yen / won / dong, and `formatSalary` divides by 1
+instead of 100. A salary entered as `11500000` JPY renders as ¥11.5M, not ¥115,000.
+
 ## Indexes, and why exactly these
 
 | Index | Serves |
 |---|---|
 | `application_user_idx` | Every list query filters on `userId` first |
-| `application_user_deleted_idx` | The trash toggle — `userId` plus `deletedAt is null` |
+| `application_user_deleted_idx` | The trash toggle — `userId` plus a `deletedAt` predicate. It serves both the active query (`deletedAt IS NULL`) and the trash query (`IS NOT NULL`) |
 | `interview_application_idx` | Detail modal loads interviews for one application |
 | `contact_application_idx` | Same, for contacts |
 | `activity_application_idx (applicationId, occurredAt)` | Timeline scan **and** the 90-day bounded stage-moves query |
 | `resume_user_idx` | The library list and the per-user upload cap both filter on `userId` |
 | `user_username_unique` | Username sign-in; also stops two people claiming one handle |
+| `user_email_unique` | The `email` column's own `.unique()`. Backs the duplicate-email pre-check and the sign-in lookup by email |
+| `session_token_unique` | The `token` column's own `.unique()`. The session cookie lookup is a point read on it |
+| `rate_limit_key_unique` | The counter key. Required by Better Auth's rate-limit table; added in `0002`, which is a table rebuild |
 | `account_provider_id_account_id_unique` | One credential row per provider identity |
 
 There is no index on `stage` or `status`. They are low-cardinality and every query that touches
@@ -196,15 +211,44 @@ Migrations are flat files (`0000_useful_butterfly.sql`), not one folder per migr
 `wrangler.jsonc` points at `db/migrations/*.sql`. See [docs/research/drizzle.md](research/drizzle.md).
 
 `0003_mixed_caretaker.sql` adds `resume` and is **additive only** — a `CREATE TABLE` plus one
-index, no `ALTER`, no table rebuild. That is the standard to hold new migrations to: SQLite
-rewrites a table to change its constraints, and a rewrite is the one thing this project will not
-ship against live data.
+index, no `ALTER`, no table rebuild. That is the standard to hold new migrations to where the
+table has live data: SQLite rewrites a table to change its constraints, and rewriting
+`application` is the thing to avoid.
+
+The repo has done it once, on a table that held nothing a user would miss. `0002` rebuilds
+`rate_limit` (`PRAGMA foreign_keys=OFF` → `CREATE TABLE __new_rate_limit` → `INSERT … SELECT` →
+`DROP` → `ALTER … RENAME`) to add the unique constraint on `key`. Fine for an internal counter
+table; not fine for `application`. `docs/research/drizzle.md` has the `PRAGMA defer_foreign_keys`
+recipe for the cases where a rebuild is genuinely unavoidable.
 
 ## Query discipline
 
-Every read and write goes through `src/lib/server/applications-data.ts` (and `resumes-data.ts` for
-resumes), and every function there takes the per-request `Db` plus the acting `userId`, and filters
-on `userId`. There is no "get all applications" query and no way to reach another user's rows.
+Every read and write against the app tables goes through `src/lib/server/applications-data.ts` (and
+`resumes-data.ts` for resumes), and every function there takes the per-request `Db` plus the acting
+`userId`. There is no "get all applications" query and no way to reach another user's rows.
+
+**How the `userId` filter is applied is not uniform, and the distinction matters.** Two shapes are
+in use:
+
+- **SQL-level** — the `userId` predicate is part of the `WHERE`. Used by every list query, every
+  write, and every resume query. `resumes-data.ts` is entirely this shape, which is why a foreign
+  resume id 404s at the database rather than in JavaScript.
+- **Read-then-check** — the query is `WHERE id = ?` alone, and ownership is asserted in JS by the
+  `visible()` helper (`app.userId === userId`) before anything is returned or written. Six
+  functions work this way: `getApplicationDetail`, `updateApplication`, `softDeleteApplication`,
+  `restoreApplication`, `addInterview`, `addContact`.
+
+The read-then-check shape exists because these are all *single-row by primary key* reads, where
+`id` is already unique and the index seek is identical either way — adding `AND user_id = ?` would
+not change the plan. It is not a weaker guarantee: the JS check runs before any side-table read and
+before any write, and the writes that follow still carry `AND user_id = ?` in their own `WHERE`
+(`updateApplication`, `softDeleteApplication`, `restoreApplication`, `permanentlyDeleteApplication`
+all double up). The cost is that the *read* is not index-scoped by user, which is irrelevant for a
+point lookup on a unique key.
+
+So: "every query filters on `userId`" is true of the list and resume paths and true of every write,
+and true of the single-row reads only after an in-process assertion. Both are tenancy-safe; do not
+read the shorthand as "every `WHERE` clause literally contains `user_id`".
 
 Resume reads go one step further: `getResumeForUser()` 404s on a foreign id rather than 403ing, so
 a probing request cannot even confirm that the id exists. `isResumeOwned()` is the same predicate

@@ -455,7 +455,7 @@ Dev-only. `$inspect(a, b)` deep-tracks. `with(cb)` lets you replace the log. `$i
 
 - `{#each}` key must be a primitive or stable object. Avoid arrays as keys (new ref every render).
 - Destructuring in `{#each as { id, ...rest }}` works.
-- `class={{ active, 'font-bold': true }}` and `class={[cond && 'a', 'b']}` (clsx semantics, since 5.16). Old `class:` directive is legacy.
+- `class={{ active, 'font-bold': true }}` and `class={[cond && 'a', 'b']}` (clsx semantics, since 5.16) are an **alternative** to the `class:` directive, not a replacement for it. `class:` is still fully supported and not deprecated: `ClassDirective` is a first-class AST node with its own transform path in `svelte/src/compiler/phases/3-transform/client/visitors/RegularElement.js`. An earlier draft of this file called `class:` "legacy" and said `class={...}` "replaces" it — that is wrong, and it contradicts this repo, which uses `class:` throughout (`FilterBar.svelte`, `dashboard/+page.svelte`, `+page.svelte`). Use whichever reads better; do not migrate away from `class:` on the strength of this file.
 - `style:--my-var={val}` — set a CSS custom property.
 
 ### Attachments / actions
@@ -563,7 +563,7 @@ import { mount, unmount, hydrate, render, tick, flushSync, createSubscriber } fr
 - Pass CSS custom properties to child components to style them from the parent.
 - Prefer `createContext` over `set/getContext`.
 - For shared global state, use `context` over a `.svelte.js` module — avoids SSR cross-request leaks.
-- `class={{...}}` and `class={[...]}` over `class:`.
+- `class={{...}}` / `class={[...]}` and the `class:` directive are both current; neither supersedes the other. See the note in Appendix A.
 
 ## TypeScript
 
@@ -617,7 +617,7 @@ Rules of thumb (from `svelte/best-practices`; see full Best practices section ab
 - `onclick={...}` (attribute) replaces `on:click`. No modifiers — call `e.preventDefault()` etc. in the handler. `onclickcapture={...}` exists.
 - `<DynamicComponent this={...} />` (or just `<Component />` with a `Component` binding) replaces `<svelte:component this=...>`.
 - `{#snippet name(...)}` / `{@render name(...)}` replaces `<slot>` / `$$slots`. Children is a snippet prop named `children`.
-- `class={[a, b && 'c']}` / `class={{ active: isOn }}` replaces `class:active={isOn}`.
+- `class={[a, b && 'c']}` / `class={{ active: isOn }}` is available (5.16+) alongside `class:active={isOn}`, which is **not** deprecated. Pick per readability.
 - `{@attach ...}` replaces `use:action`.
 - Use `createContext()` (Svelte ≥5.40) for type-safe context: `const [get, set, has] = createContext<T>()`.
 

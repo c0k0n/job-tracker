@@ -99,20 +99,6 @@ export function formatDurationInStage(stageChangedAt: string | null | undefined)
 }
 
 /**
- * Returns true when an ISO date is within the next `windowDays` from
- * today (inclusive of today, exclusive of past dates).
- */
-export function isUpcoming(iso: string | null | undefined, windowDays: number = 30): boolean {
-	if (!iso) return false;
-	const then = new Date(iso).getTime();
-	if (Number.isNaN(then)) return false;
-	const now = Date.now();
-	if (then < now) return false;
-	const diffMs = then - now;
-	return diffMs <= windowDays * 24 * 60 * 60 * 1000;
-}
-
-/**
  * Quick check: was the application created in the current calendar month?
  */
 export function isThisMonth(iso: string | null | undefined): boolean {

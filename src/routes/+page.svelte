@@ -8,9 +8,12 @@
 
 	let { form }: { form: ActionData } = $props();
 
-	/** `?signedout=1` → calm confirmation banner (set by the pending-approval
-	 * sign-out and the dashboard sign-out). */
+	/** `?signedout=1` → calm confirmation banner (set by the dashboard
+	 * sign-out). `?approved=1` → the first-ever account bootstrapped as an
+	 * approved admin, so there is nobody to wait for; it just has to sign
+	 * in like everyone else. */
 	const justSignedOut = $derived(page.url.searchParams.get('signedout') === '1');
+	const bootstrapped = $derived(page.url.searchParams.get('approved') === '1');
 
 	// Active mode for the tabs. Drives what the form submits and which
 	// heading the user sees. Reacts to `form.mode` after a server failure so
@@ -35,8 +38,13 @@
 	// Heading id is referenced by the form via aria-labelledby so screen
 	// readers know the form context.
 	const headingId = 'auth-heading';
-	const signinPanelId = 'auth-panel-signin';
-	const signupPanelId = 'auth-panel-signup';
+	// One panel, two tabs. The panel keeps a stable id and takes its label
+	// from whichever tab is selected; the previous version swapped the
+	// panel's own id with the mode, which left the unselected tab's
+	// `aria-controls` pointing at an element that did not exist. Rendering
+	// two panels instead is not an option: they would carry the same form
+	// and duplicate every input id.
+	const panelId = 'auth-panel';
 
 	function select(next: Mode) {
 		mode = next;
@@ -44,22 +52,20 @@
 
 	// WAI-ARIA tabs pattern: arrow keys move between tabs, Home/End jump to
 	// the ends. Focus follows selection so keyboard users aren't stranded.
+	//
+	// The two tabs share ONE panel (see below), so "previous" and "next"
+	// are the only two positions that exist: with a two-item list, Home is
+	// always the first tab and End is always the last.
 	function onTabKeydown(e: KeyboardEvent) {
-		const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
-		if (!keys.includes(e.key)) return;
+		if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
 		e.preventDefault();
-		const prev = mode === 'signin' ? 'signup' : 'signin';
-		const nextMode: Mode =
-			e.key === 'ArrowRight' || e.key === 'End'
-				? 'signup'
-				: e.key === 'ArrowLeft' || e.key === 'Home'
-					? 'signin'
-					: prev;
+		const nextMode: Mode = e.key === 'ArrowRight' || e.key === 'End' ? 'signup' : 'signin';
 		mode = nextMode;
 		// Focus the newly selected tab.
 		queueMicrotask(() => {
-			const id = nextMode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup';
-			document.getElementById(id)?.focus();
+			document
+				.getElementById(nextMode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup')
+				?.focus();
 		});
 	}
 </script>
@@ -90,6 +96,16 @@
 		</div>
 	{/if}
 
+	{#if bootstrapped}
+		<div
+			role="status"
+			class="bg-success-bg mb-6 rounded-md border border-success px-3 py-2.5 text-sm text-success"
+		>
+			Account created and approved. You are the first user here, so the approval queue is empty and
+			there is nobody to wait for. Sign in below.
+		</div>
+	{/if}
+
 	<header class="mb-8">
 		<p class="font-mono text-xs tracking-widest text-muted uppercase">Job Tracker</p>
 		<h1
@@ -116,7 +132,7 @@
 			type="button"
 			role="tab"
 			id="auth-tab-signin"
-			aria-controls={signinPanelId}
+			aria-controls={panelId}
 			aria-selected={mode === 'signin'}
 			tabindex={mode === 'signin' ? 0 : -1}
 			onkeydown={onTabKeydown}
@@ -133,7 +149,7 @@
 			type="button"
 			role="tab"
 			id="auth-tab-signup"
-			aria-controls={signupPanelId}
+			aria-controls={panelId}
 			aria-selected={mode === 'signup'}
 			tabindex={mode === 'signup' ? 0 : -1}
 			onkeydown={onTabKeydown}
@@ -190,7 +206,7 @@
 
 		<div
 			role="tabpanel"
-			id={mode === 'signin' ? signinPanelId : signupPanelId}
+			id={panelId}
 			aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
 			class="space-y-5"
 		>

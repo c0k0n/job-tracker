@@ -17,7 +17,25 @@
 		.pulse2 { animation: glow 2.4s ease-in-out infinite .6s; }
 		.pulse3 { animation: glow 2.4s ease-in-out infinite 1.2s; }
 		.pulse4 { animation: glow 2.4s ease-in-out infinite 1.8s; }
-	</style>
+	
+		/* Motion is decoration, and the animation is load-bearing in a way
+		   that is easy to miss: these rules use `animation-fill-mode: both`
+		   so before the delay elapses each element sits at its `from`
+		   keyframe. For the slide-in classes that keyframe is `opacity: 0`,
+		   and for the grow classes it is `scaleX(0)` — so wherever animation
+		   does not run (a reduced-motion preference, a renderer that drops
+		   the style element, a static export) the labels and the bars stay
+		   invisible instead of merely unanimated. The end state has to be
+		   the resting state. */
+		@media (prefers-reduced-motion: reduce) {
+			.flowing, .pulse1, .pulse2, .pulse3, .pulse4
+			{
+				animation: none !important;
+				opacity: 1;
+				transform: none;
+			}
+		}
+</style>
 
 	<rect class="bg" x="0" y="0" width="780" height="300" rx="10"/>
 

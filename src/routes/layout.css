@@ -1,10 +1,22 @@
+/*
+ * Design tokens (Tailwind v4 CSS-first).
+ *
+ * The whole palette lives here: 8 base colours, 3 feedback colours, 6 stage
+ * and 5 status `-100`/`-700` pairs, four `--tag-*` scalars, two font stacks.
+ * Dark mode is a `prefers-color-scheme` override at the bottom of this file —
+ * there is no theme toggle, no `.dark` class, and no `@custom-variant dark`.
+ * The `:root:not(.light)` selector is there so a future manual toggle has
+ * something to hang a `.light` override on; today nothing sets that class.
+ */
 @import 'tailwindcss';
 
 /*
- * Design tokens (Tailwind v4 CSS-first).
- * Minimal set for current routes. The full palette + dark/light toggle
- * arrives with the UI shell phase; until then, these defaults are derived
- * from the OS preference via the `dark` custom variant below.
+ * The `--tag-*` scalars below are deliberately NOT namespaced as
+ * `--color-tag-*`. They are not colours; they are the lightness and chroma
+ * components that `FilterBar` composes with a per-tag hue at runtime:
+ * `oklch(var(--tag-bg-l) var(--tag-bg-c) <hue>)`. Tailwind passes
+ * unrecognised `@theme` names through as plain custom properties on `:root`,
+ * which is what makes `var()` work here. See docs/design-system.md.
  */
 @theme {
 	/* Surfaces */
@@ -70,8 +82,6 @@
 	--color-stage-late-700: oklch(0.45 0.12 170);
 	--color-stage-offer-100: oklch(0.95 0.04 145);
 	--color-stage-offer-700: oklch(0.45 0.13 145);
-	--color-stage-terminal-100: oklch(0.93 0.02 290);
-	--color-stage-terminal-700: oklch(0.4 0.06 290);
 	--color-stage-closed-100: oklch(0.92 0.01 0);
 	--color-stage-closed-700: oklch(0.4 0.02 0);
 
@@ -98,22 +108,11 @@
 		ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
-/* Honor OS preference until we ship a manual toggle. */
-
-/* Respect users who ask their OS to reduce motion: kill CSS animations,
-   the backdrop blur fade, and the color/background transitions so nothing
-   strobes or slides for them (WCAG AAAA 2.3.3). */
-@media (prefers-reduced-motion: reduce) {
-	*,
-	*::before,
-	*::after {
-		animation-duration: 0.01ms !important;
-		animation-iteration-count: 1 !important;
-		transition-duration: 0.01ms !important;
-		scroll-behavior: auto !important;
-	}
-}
-
+/*
+ * Dark mode. Honors the OS preference; there is no manual toggle, so no
+ * `.dark` / `.light` class is ever applied and the `:not(.light)` guard is
+ * headroom for one.
+ */
 @media (prefers-color-scheme: dark) {
 	:root:not(.light) {
 		--color-bg: oklch(0.16 0 0);
@@ -146,8 +145,6 @@
 		--color-stage-late-700: oklch(0.85 0.12 170);
 		--color-stage-offer-100: oklch(0.27 0.06 145);
 		--color-stage-offer-700: oklch(0.85 0.13 145);
-		--color-stage-terminal-100: oklch(0.27 0.03 290);
-		--color-stage-terminal-700: oklch(0.82 0.06 290);
 		--color-stage-closed-100: oklch(0.25 0.01 0);
 		--color-stage-closed-700: oklch(0.75 0.02 0);
 
@@ -168,5 +165,22 @@
 		--tag-bg-c: 0.04;
 		--tag-fg-l: 0.85;
 		--tag-fg-c: 0.11;
+	}
+}
+
+/*
+ * Respect users who ask their OS to reduce motion: kill CSS animations and
+ * the color/background transitions so nothing strobes or slides for them
+ * (WCAG 2.3.3). Lives at the end of the file so it overrides everything
+ * above regardless of source order within the same specificity.
+ */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
 	}
 }

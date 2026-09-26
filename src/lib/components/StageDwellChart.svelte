@@ -106,14 +106,15 @@
 		-->
 		<ol class="space-y-1.5">
 			{#each rows as row (row.stage.value)}
-				<li
-					class="flex items-center gap-3"
-					aria-label="{row.stage.label}: {row.apps.length} {row.apps.length === 1
-						? 'application'
-						: 'applications'}{row.longest > 0
-						? `, longest ${row.longest} days`
-						: ''}{row.stalledCount > 0 ? `, ${row.stalledCount} stalled or ghosted` : ''}"
-				>
+				<!--
+					No aria-label on the <li>. A label with no role behind it
+					is not reliably announced, and on a listitem it would
+					*replace* the visible stage name and counts rather than
+					adding to them. The row's own text carries everything:
+					stage label, count, longest dwell, and stuck count. Each
+					dot keeps its own `title` for pointer users.
+				-->
+				<li class="flex items-center gap-3">
 					<!-- Fixed-width gutters so the tracks align. Narrowed on
 						phones (w-20) to leave the track enough room to be
 						readable at 320px. -->
@@ -135,7 +136,7 @@
 							<span
 								class="absolute inset-0 flex items-center justify-center font-mono text-[10px] text-muted/50"
 							>
-								—
+								·
 							</span>
 						{:else}
 							{#each row.apps as app (app.id)}
@@ -184,7 +185,7 @@
 
 		<p class="mt-2 text-xs text-muted">
 			Each dot is a live application placed by how long it has sat in its current stage. Stalled or
-			ghosted dots are follow-up candidates — the KPI strip tracks them globally.
+			ghosted dots are follow-up candidates. The KPI strip tracks them globally.
 		</p>
 	</div>
 {/if}

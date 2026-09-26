@@ -3,13 +3,14 @@
  *
  * Why this exists. SvelteKit's `enhance` catches a failed `fetch` (dead
  * connection, worker restart, DNS blip) and turns it into
- * `{ type: 'error', error }` — verified in the installed source at
+ * `{ type: 'error', error }` — that half is in the installed source at
  * node_modules/@sveltejs/kit/src/runtime/app/forms.js, lines ~192-205.
- * The *default* callback then calls `applyAction(result)`, and applying an
- * error result throws to the nearest `+error.svelte` boundary. So a
- * momentary network hiccup on "Move to trash" replaces the entire
- * dashboard with an error page and loses the user's filters, scroll
- * position and open modal.
+ * The *default* callback then calls `applyAction(result)`, and applying
+ * an error result is what throws to the nearest `+error.svelte`
+ * boundary — that half is in .../runtime/client/client.js, ~2593-2600
+ * (`set_nearest_error_page`). So a momentary network hiccup on "Move to
+ * trash" replaces the entire dashboard with an error page and loses the
+ * user's filters, scroll position and open modal.
  *
  * That default is right for a *navigation* (there is nothing else to do)
  * but wrong for a mutation the user can simply retry. This helper keeps

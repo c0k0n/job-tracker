@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { resolve as resolvePath } from '$app/paths';
 
 	const status = $derived(page.status);
 	const message = $derived(page.error?.message ?? 'Something went wrong');
@@ -12,8 +13,10 @@
 	const attemptedPath = $derived(page.url?.pathname ?? '');
 
 	function goHome() {
-		// Hard nav resets focus to the new page; SPA goto would lose the <body> reset
-		window.location.assign('/');
+		// Hard nav resets focus to the new page; an SPA goto would lose the
+		// <body> reset. Routed through resolvePath so it still honours
+		// `kit.paths.base` if the app is ever mounted under a sub-path.
+		window.location.assign(resolvePath('/'));
 	}
 </script>
 

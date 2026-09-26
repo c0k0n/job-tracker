@@ -8,10 +8,20 @@
 		variant?: Variant;
 		size?: Size;
 		type?: 'button' | 'submit' | 'reset';
+		/** Native `disabled`. The element leaves the tab order and is not
+		 * announced — correct for a control that is *permanently*
+		 * unavailable ("Restore" on an application that isn't in trash).
+		 * For a *temporarily* unavailable control use `busy`. */
 		disabled?: boolean;
-		/** Show a spinner + aria-busy when true. The button stays focusable
-		 * so screen readers announce the busy state; the spinner replaces
-		 * any leading icon. */
+		/** In-flight state: shows a spinner, sets `aria-busy`, and marks the
+		 * button `aria-disabled` — but leaves it focusable and in the tab
+		 * order, so a screen-reader user can still reach it and hear what
+		 * happened. That is the whole reason this is not the same thing as
+		 * `disabled`: a native `disabled` attribute is removed from
+		 * sequential focus by every browser, so a busy button would vanish
+		 * from the page mid-interaction. Clicks are swallowed (see
+		 * `handleClick`), which is what actually prevents the double
+		 * submit. */
 		busy?: boolean;
 		/** Forwarded click handler. */
 		onclick?: (e: MouseEvent) => void;
@@ -59,19 +69,26 @@
 	);
 
 	function handleClick(e: MouseEvent) {
-		if (disabled || busy) return;
+		// Swallow the activation, not just the handler call: a submit button
+		// inside a form would still post the form on click even if `onclick`
+		// is a no-op, which is the exact double-submit `busy` exists to stop.
+		if (disabled || busy) {
+			e.preventDefault();
+			return;
+		}
 		onclick?.(e);
 	}
 </script>
 
 <button
 	{type}
-	disabled={disabled || busy}
+	{disabled}
+	aria-disabled={disabled || busy ? 'true' : undefined}
 	aria-busy={busy || undefined}
 	aria-label={ariaLabel}
 	{title}
 	onclick={handleClick}
-	class="inline-flex cursor-pointer items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60 {variantClass} {sizeClass} {extraClass}"
+	class="inline-flex cursor-pointer items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60 {variantClass} {sizeClass} {extraClass}"
 >
 	{#if busy}
 		<span

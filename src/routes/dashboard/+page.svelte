@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto, replaceState } from '$app/navigation';
 	import { resolve as resolvePath } from '$app/paths';
-	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { page as pageStore } from '$app/state';
 	import { enhance } from '$app/forms';
 	import { untrack } from 'svelte';
@@ -61,9 +60,12 @@
 	const hasVisibleRows = $derived(visibleRows.length > 0);
 	const hasActive = $derived(hasActiveFilters(filters));
 
-	const staleCount = $derived(
-		data.applications.filter((a) => a.status === 'stalled' || a.status === 'ghosted').length
-	);
+	// The stale banner and the "Needs attention" tile answer the same
+	// question, so they read the same number. It used to be recomputed here
+	// from `data.applications`, which meant the two could disagree: the
+	// server's `computeKpis` also excludes terminal-stage rows, so a
+	// rejected-but-ghosted application bumped the banner and not the tile.
+	const staleCount = $derived(data.kpis.needsAttention);
 
 	// KpiCard sublabel copy.
 	const interviewsSublabel = $derived.by(() => {
@@ -132,11 +134,29 @@
 		detailOpen = !!pageStore.url.searchParams.get('app');
 	});
 
+	/**
+	 * The live query string.
+	 *
+	 * NOT `page.url.searchParams`. `replaceState` moves `window.location`
+	 * but leaves `page.url` frozen at the last *real* navigation, so
+	 * anything the user changed since — a search term, a filter chip, a sort
+	 * column — is invisible there. Reading it and calling `goto` silently
+	 * threw all of it away: click a row with a search applied and you landed
+	 * on `?app=<id>` with the filter bar reset and the full table back. The
+	 * URL-sync effect at the bottom of this file makes the same point for
+	 * the same reason.
+	 *
+	 * Browser-only, which is fine: this runs from a click, never during SSR.
+	 */
+	function liveSearchParams(): URLSearchParams {
+		return new URLSearchParams(window.location.search);
+	}
+
 	function onRowClick(app: Application) {
 		// goto (real navigation): the detail bundle must be fetched by the
 		// server load (?app=), and page.url updates — which the hydrate
 		// effect above turns into detailOpen = true.
-		const sp = new SvelteURLSearchParams(pageStore.url.searchParams);
+		const sp = liveSearchParams();
 		sp.set('app', app.id);
 		void goto(resolvePath(`/dashboard?${sp.toString()}`), {
 			replaceState: true,

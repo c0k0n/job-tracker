@@ -27,7 +27,7 @@
 <fieldset class="space-y-3">
 	<legend class="text-sm font-medium text-fg">Salary</legend>
 	<p class="text-xs text-muted">
-		The pay this role offers or targets, if known. Optional — leave it as "Not specified".
+		The pay this role offers or targets, if known. Optional. Leave it as "Not specified".
 	</p>
 
 	<!-- Hidden inputs to submit values with parent FormData -->
@@ -64,7 +64,7 @@
 				>
 				<select id="app-salary-currency" bind:value={currency} class={inputClass}>
 					{#each CURRENCIES as c (c.code)}
-						<option value={c.code}>{c.code} — {c.label}</option>
+						<option value={c.code}>{c.code} · {c.label}</option>
 					{/each}
 				</select>
 			</div>

@@ -20,6 +20,30 @@
 	import Button from './Button.svelte';
 	import SalaryInput from './SalaryInput.svelte';
 
+	/**
+	 * Per-field messages the create/edit actions can return. Mirrors the
+	 * `errors` object built in `dashboard/+page.server.ts`; anything the
+	 * server adds there shows up in the summary banner via
+	 * `unfieldedError` even if it has no field of its own.
+	 */
+	interface FormErrors {
+		company?: string;
+		role?: string;
+		stage?: string;
+		status?: string;
+		workArrangement?: string;
+		postingUrl?: string;
+		postingDescription?: string;
+		notes?: string;
+		tags?: string;
+		resume?: string;
+		salary?: string;
+		appliedAt?: string;
+		nextActionAt?: string;
+		id?: string;
+		form?: string;
+	}
+
 	interface Props {
 		/** When set, the form edits this application (POSTs to ?/edit). */
 		application?: Application;
@@ -56,9 +80,13 @@
 
 	// Local form state. `application` provides the defaults when editing;
 	// `result.values` is the echo-back from a server-side validation failure.
-	// Per Svelte 5 best practices, we snapshot the props once (untracked)
-	// at mount and don't sync live — the form is short-lived inside a
-	// shallow-routed modal that remounts on each open.
+	//
+	// The *field defaults* are a mount-time snapshot (untracked), and that
+	// is correct: the create modal is mounted inside `Modal`'s `{#if open}`,
+	// so it remounts on every open and picks up the echo-back as it
+	// initialises. The edit form inside ApplicationDetailModal does NOT
+	// remount when the action fails, so its fields have to stay live local
+	// state — which they are, via `bind:value`.
 	const initial = untrack(() => {
 		const values = result?.values as
 			| {
@@ -81,21 +109,6 @@
 					salaryMax?: string;
 			  }
 			| undefined;
-		const errors = result?.errors as
-			| {
-					company?: string;
-					role?: string;
-					stage?: string;
-					status?: string;
-					workArrangement?: string;
-					postingUrl?: string;
-					postingDescription?: string;
-					notes?: string;
-					tags?: string;
-					resume?: string;
-					salary?: string;
-			  }
-			| undefined;
 
 		// Salary: prefer echo-back values, then existing application salary.
 		const echoSalary: SalaryFormValues | undefined =
@@ -111,8 +124,6 @@
 		const salaryDefaults = echoSalary ?? defaultSalaryFormValues(application?.salary ?? null);
 
 		return {
-			values,
-			errors,
 			form: {
 				company: values?.company ?? application?.company ?? '',
 				role: values?.role ?? application?.role ?? '',
@@ -131,7 +142,20 @@
 		};
 	});
 
-	const { errors } = initial;
+	/**
+	 * Errors, by contrast, MUST stay reactive.
+	 *
+	 * This used to be pulled out of the same untracked snapshot as the field
+	 * defaults, which silently broke the edit form: a failed `?/edit` post
+	 * updates `page.form`, this component's `result` prop changes, and a
+	 * snapshot taken at mount never sees it — so the server's messages were
+	 * dropped on the floor and the user got a form that simply refused to
+	 * save, with nothing explaining why. Deriving from the prop means the
+	 * error state appears the moment the action answers, in both the create
+	 * and the edit host, and clears again on the next success.
+	 */
+	const errors = $derived((result?.errors ?? undefined) as FormErrors | undefined);
+
 	const form = initial.form;
 
 	let company = $state(form.company);
@@ -185,9 +209,23 @@
 	const labelClass = 'block text-sm font-medium text-fg';
 </script>
 
+<!--
+		`novalidate` because the browser's constraint validation is both
+		redundant and wrong for this form. Redundant: the actions validate
+		every field and return per-field messages. Wrong: `postingUrl` is
+		`type="url"`, and the browser rejects a bare host ("vercel.com/jobs")
+		with "Please enter a URL" — but `sanitizePostingUrl` on the server
+		deliberately accepts a bare host and prefixes https://, because that
+		is what people actually paste. Native validation fired first, so the
+		form silently refused to submit and the modal just sat there with no
+		explanation and no request in the log. The server is the single
+		validation authority; the `type` stays for mobile keyboards and for
+		semantic meaning, and the sign-in form does the same thing.
+	-->
 <form
 	method="POST"
 	action={create ? '?/create' : '?/edit'}
+	novalidate
 	use:enhance={() => {
 		submitting = true;
 		networkError = null;
@@ -367,7 +405,7 @@
 		</select>
 		<p id="app-resume-hint" class="text-xs text-muted">
 			{#if resumes.length === 0}
-				No resumes yet — upload one with the Resumes button on the dashboard.
+				No resumes yet. Upload one with the Resumes button on the dashboard.
 			{:else}
 				Pick the version you sent. It stays linked to this application.
 			{/if}

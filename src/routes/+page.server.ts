@@ -195,7 +195,8 @@ export const actions: Actions = {
 			// The first user ever bootstraps as an approved admin inside
 			// the create.before hook in auth.ts; everyone else lands in
 			// the approval queue. autoSignIn is off, so no session cookie
-			// is set either way.
+			// is set either way — so this cannot read `locals`, and has to
+			// ask the database what the hook decided.
 			//
 			// Wrapped: signUpEmail throws an APIError for anything Better
 			// Auth dislikes, and an unguarded throw here takes the whole
@@ -231,6 +232,21 @@ export const actions: Actions = {
 					emailOrUsername: 'We could not create that account. Try a different email address.'
 				});
 			}
+
+			// Read back the gate the hook wrote. A bootstrapped admin is
+			// already approved, so sending them to /pending-approval — a
+			// page whose whole copy is "an existing member has to let you
+			// in" — was telling the person setting the app up to go and
+			// approve themselves. They still have no session (autoSignIn is
+			// off), so `?approved=1` lands them on the sign-in form with the
+			// confirmation and a `next` that defaults to /dashboard.
+			const created = await db
+				.select({ disabled: user.disabled })
+				.from(user)
+				.where(eq(user.email, emailOrUsername.toLowerCase()))
+				.limit(1)
+				.all();
+			if (created[0]?.disabled === false) throw redirect(303, '/?approved=1');
 
 			// Tell them the handle they just got — otherwise "username or
 			// email" on the sign-in form is a mystery.

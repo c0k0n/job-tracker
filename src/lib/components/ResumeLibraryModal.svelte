@@ -243,6 +243,7 @@
 										href={resolvePath(`/api/resumes/${r.id}`)}
 										target="_blank"
 										rel="noreferrer"
+										aria-label={`Open ${r.name} in a new tab`}
 										class="rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										Open ↗
@@ -250,6 +251,7 @@
 									<a
 										href={resolvePath(`/api/resumes/${r.id}`)}
 										download={r.name}
+										aria-label={`Download ${r.name}`}
 										class="rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										Download
@@ -269,6 +271,7 @@
 											type="button"
 											onclick={() => (confirmingId = null)}
 											disabled={busy}
+											aria-label={`Cancel deleting ${r.name}`}
 											class="cursor-pointer rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 										>
 											Cancel
@@ -278,6 +281,8 @@
 											type="button"
 											onclick={() => (confirmingId = r.id)}
 											disabled={busy}
+											aria-label={`Delete ${r.name}`}
+											title={`Delete ${r.name}. The first click shows a confirm button.`}
 											class="cursor-pointer rounded-sm px-2 py-1 text-muted underline-offset-2 hover:text-danger hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-60"
 										>
 											Delete

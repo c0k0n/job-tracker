@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 230" width="780" height="230" role="img" aria-label="Approval gate state machine">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 244" width="780" height="244" role="img" aria-label="Approval gate state machine">
 	<title>Approval gate</title>
 	<style>
 		.bg { fill: #0d1117; }
@@ -16,9 +16,27 @@
 		.p { animation: glow 2.2s ease-in-out infinite; }
 		@keyframes dash { to { stroke-dashoffset: -30; } }
 		.f { animation: dash 1.4s linear infinite; stroke-dasharray: 5 5; }
-	</style>
+	
+		/* Motion is decoration, and the animation is load-bearing in a way
+		   that is easy to miss: these rules use `animation-fill-mode: both`
+		   so before the delay elapses each element sits at its `from`
+		   keyframe. For the slide-in classes that keyframe is `opacity: 0`,
+		   and for the grow classes it is `scaleX(0)` — so wherever animation
+		   does not run (a reduced-motion preference, a renderer that drops
+		   the style element, a static export) the labels and the bars stay
+		   invisible instead of merely unanimated. The end state has to be
+		   the resting state. */
+		@media (prefers-reduced-motion: reduce) {
+			.f, .p, 
+			{
+				animation: none !important;
+				opacity: 1;
+				transform: none;
+			}
+		}
+</style>
 
-	<rect class="bg" x="0" y="0" width="780" height="230" rx="10"/>
+	<rect class="bg" x="0" y="0" width="780" height="244" rx="10"/>
 
 	<rect class="box" x="24" y="90" width="130" height="52" rx="8"/>
 	<text class="lbl" x="89" y="113" text-anchor="middle">sign up</text>
@@ -52,6 +70,17 @@
 	<text class="lbl" x="42" y="43">first user ever to sign up bootstraps as approved admin</text>
 	<text class="sub" x="42" y="60">databaseHooks.user.create.before · everyone after that needs the queue</text>
 
-	<text class="sub" x="24" y="184">sign-in pre-checks disabled BEFORE calling signInEmail, so a pending user never gets a cookie</text>
-	<text class="sub" x="24" y="204">a stale cookie from the old flow is revoked in hooks.server.ts (self-heal) — see docs/auth.md</text>
+	<!--
+		The sign-in ordering here used to read "pre-checks disabled BEFORE
+		calling signInEmail, so a pending user never gets a cookie". That is
+		wrong, and wrong in a way that matters: checking the flag before the
+		password turns the form into an account-existence oracle ("waiting for
+		approval" vs "incorrect", no password required). The password is
+		verified first, the session it created is then revoked, and
+		hooks.server.ts is the backstop. See docs/auth.md and
+		docs/security.md.
+	-->
+	<text class="sub" x="24" y="184">sign-in verifies the password FIRST, then revokes the session it just created if disabled</text>
+	<text class="sub" x="24" y="204">checking disabled before the password would make the form an account-existence oracle</text>
+	<text class="sub" x="24" y="220">hooks.server.ts revokes any disabled user's session on every request (backstop) — see docs/auth.md</text>
 </svg>

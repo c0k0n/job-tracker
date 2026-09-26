@@ -65,8 +65,14 @@ export const account = sqliteTable('account', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
 }, (t) => ({
-  // Better Auth v1.7 unique constraint on (issuer, accountId)
-  uniqIssuerAccount: uniqueIndex('account_issuer_account_unique').on(t.providerId, t.accountId),
+  // Better Auth's unique constraint on (providerId, accountId). There is no
+  // `issuer` column in 1.7.5 and no `identityStrategy` option - an earlier
+  // draft of this file named both, which does not match the installed
+  // package. The repo's own index is `account_provider_id_account_id_unique`.
+  uniqProviderAccount: uniqueIndex('account_provider_id_account_id_unique').on(
+    t.providerId,
+    t.accountId
+  ),
 }));
 
 export const verification = sqliteTable('verification', {

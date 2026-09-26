@@ -10,7 +10,7 @@
 - `@tailwindcss/vite ^4.3.3`
 - `prettier-plugin-tailwindcss ^0.8.1`
 
-`vite.config.ts` registers `tailwindcss()`. `src/routes/layout.css` is `@import 'tailwindcss';`. `prettier.config.mts` sets `tailwindStylesheet: './src/routes/layout.css'`. **We are mid-migration**: this scaffold uses the v4 wiring but the CSS is the empty `v4 baseline`. We'll add design tokens via `@theme` in `layout.css` when we start styling.
+`vite.config.ts` registers `tailwindcss()`. `src/routes/layout.css` is `@import 'tailwindcss';`. `prettier.config.mts` sets `tailwindStylesheet: './src/routes/layout.css'`. **The migration is done**: `layout.css` carries the full token set (8 base colours, 6 stage and 5 status `-100`/`-700` pairs, feedback colours, four `--tag-*` scalars, two font stacks) plus a `prefers-reduced-motion` block and a `prefers-color-scheme: dark` override. The sections below that say "when we style" are stale and describe the pre-token scaffold; the shipped file is the source of truth.
 
 ## What changed v3 → v4 (the points that actually matter)
 
@@ -45,12 +45,16 @@ export default defineConfig({
       compilerOptions: { runes: ({ filename }) => filename.split(/[/\\]/).includes('node_modules') ? undefined : true },
       adapter: adapter()
     })
-  ]
+  ],
+  // Also in the real file, unrelated to Tailwind: rolldown's PLUGIN_TIMINGS
+  // report is silenced, because for SvelteKit it always fires and never says
+  // anything actionable. See docs/deployment.md.
+  build: { rolldownOptions: { checks: { pluginTimings: false } } }
 });
 ```
 
 ```css
-/* src/routes/layout.css (current — we'll add to this) */
+/* src/routes/layout.css - the token block now lives below this import */
 @import 'tailwindcss';
 ```
 
@@ -178,7 +182,7 @@ For dark mode, **v4 changed**: `darkMode: "class"` is removed. You declare the v
 @media (prefers-color-scheme: dark) { :root { /* dark overrides */ } }
 ```
 
-The class-based strategy needs a tiny `setPreference` shim (10 lines) to flip `.dark` on `<html>` and persist the choice. We'll add it in `src/lib/theme.ts` when we style.
+The class-based strategy needs a tiny `setPreference` shim (10 lines) to flip `.dark` on `<html>` and persist the choice. **Not implemented, and not planned**: this app has no theme toggle. Dark mode is `prefers-color-scheme` only — `layout.css` overrides the tokens under `@media (prefers-color-scheme: dark)` against `:root:not(.light)`, and no `.light` / `.dark` class is ever set on `<html>`. There is no `src/lib/theme.ts` and no `@custom-variant dark`. If a manual toggle is ever added, that is the work: the shim, the `@custom-variant`, and switching the media query to class selectors.
 
 ## Practical recipes for the job-tracker
 
@@ -310,7 +314,23 @@ Resets the cross-browser form-element ugliness. Classes like `[&_input]:bg-bg [&
 - Motion: `transition`, `transition-all`, `duration-150`, `ease-out`, `animate-spin`, `motion-safe:`, `motion-reduce:`.
 - Grid: `col-span-*`, `row-span-*`, `grid-cols-*`, `grid-rows-*`, `auto-cols-*`, `place-items-*`.
 
-## What we'll add in `src/routes/layout.css` (when we style)
+## What is actually in `src/routes/layout.css`
+
+**This section described a plan; the plan shipped.** `layout.css` is now 170-odd lines: one
+`@theme` block with the token set, a `prefers-reduced-motion` block, and a
+`prefers-color-scheme: dark` override. Read the file rather than the recipe below. The two
+structural notes that still matter:
+
+- The `--tag-bg-l` / `--tag-bg-c` / `--tag-fg-l` / `--tag-fg-c` scalars are **not** namespaced
+  (`--tag-*`, not `--color-tag-*`). That is deliberate: they are not colours, they are
+  `oklch()` components that `FilterBar.svelte` composes with a per-tag hue at runtime
+  (`oklch(var(--tag-bg-l) var(--tag-bg-c) <hue>)`). Naming them `--color-*` would make Tailwind
+  try to generate colour utilities from values that are not colours. See `docs/design-system.md`.
+- The build emits no warning about them. Tailwind v4 passes unrecognised `@theme` names through
+  as plain custom properties on `:root`, which is exactly the behaviour relied on here.
+
+<details>
+<summary>Original "when we style" recipe (superseded)</summary>
 
 ```css
 @import "tailwindcss";
@@ -341,6 +361,12 @@ Resets the cross-browser form-element ugliness. Classes like `[&_input]:bg-bg [&
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 12px rgb(0 0 0 / 0.06);
 }
 ```
+
+None of the above shipped as written: no brand scale, no `@tailwindcss/forms`, no radius or shadow
+tokens, and `--color-muted` is a foreground colour there whereas in this repo it is a foreground and
+`--color-surface-2` is the surface. Kept only as a record of the shape considered.
+
+</details>
 
 ## Sources
 

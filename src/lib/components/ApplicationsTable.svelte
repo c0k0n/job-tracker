@@ -219,17 +219,24 @@
 									type="button"
 									onclick={() => onRowClick?.(app)}
 									aria-label={`Open ${app.company} ${app.role} details`}
-									class="cursor-pointer text-left font-medium text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									class="cursor-pointer text-left font-medium text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 								>
 									{app.company}
 								</button>
 								{#if app.resumeId}
 									{@const attached = resumeNames.get(app.resumeId) ?? 'a deleted resume'}
+									<!--
+									Visually-hidden text, not aria-label: an
+									aria-label on a bare <span> with no role is
+									not reliably announced, and it would replace
+									the element's own content rather than add
+									to it. Real text is announced by every AT.
+								-->
 									<span
-										aria-label={`Resume attached: ${attached}`}
 										title={`Resume: ${attached}`}
 										class="inline-flex size-4 items-center justify-center rounded-sm bg-surface-2 text-muted"
 									>
+										<span class="sr-only">Resume attached: {attached}</span>
 										<svg
 											aria-hidden="true"
 											xmlns="http://www.w3.org/2000/svg"

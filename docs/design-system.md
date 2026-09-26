@@ -63,8 +63,14 @@ the same hue family, all low chroma.
 ```mermaid
 flowchart LR
     A["saved<br/>hue 250"] --> B["applied<br/>220"] --> C["progress<br/>200"] --> D["late<br/>170"] --> E["offer<br/>145"]
-    F["terminal<br/>290"] & G["closed<br/>0"] --> H["out of band"]
+    F["closed<br/>hue 0"] --> G["accepted · rejected · withdrawn"]
 ```
+
+Six hue families, and the last one covers all three terminal stages. There is no separate
+"terminal" bucket: an earlier revision defined a 290-hue pair for it, and it was dead from the day
+it was written — `accepted`, `rejected`, and `withdrawn` all mapped to `stage-closed`, so the token,
+its `-100`/`-700` pair, and its three class-map entries could never render. They have been removed
+rather than left as a trap for the next person to wire up.
 
 Tags are the one place colour is arbitrary. Instead of hashing a tag name to a random hue — which
 is how you get a rainbow — tag colours snap to six low-chroma buckets driven by four variables:
@@ -95,9 +101,15 @@ flowchart TD
     H -- yes --> I["STOP — must be --color-foo"]
 ```
 
-- **Namespaced tokens only.** A bare `--primary` in `@theme` produces no utilities — Tailwind v4
-  only scans namespaces (`--color-*`, `--font-*`, `--text-*`, …). Non-token variables go in
-  `:root`. See [research/tailwind-v4.md](research/tailwind-v4.md).
+- **Namespaced tokens only — with one deliberate exception.** A bare `--primary` in `@theme` produces no
+  utilities, because Tailwind v4 only scans namespaces (`--color-*`, `--font-*`, `--text-*`, …). Non-token
+  variables go in `:root`. The exception is the four `--tag-*` scalars, which are `oklch()`
+  *components* rather than colours: `FilterBar` composes them with a per-tag hue at runtime
+  (`oklch(var(--tag-bg-l) var(--tag-bg-c) <hue>)`), so naming them `--color-*` would ask
+  Tailwind to generate colour utilities from values that are not colours. Tailwind passes
+  unrecognised `@theme` names through as plain custom properties on `:root`, which is exactly
+  the behaviour relied on, and it emits no warning. See
+  [research/tailwind-v4.md](research/tailwind-v4.md).
 - **No em-dashes in UI copy.**
 - **Semantic HTML first.** `<button>` for actions, `<table>` for the grid, labelled inputs, a real
   `<dialog>`-style focus trap in `Modal.svelte`.

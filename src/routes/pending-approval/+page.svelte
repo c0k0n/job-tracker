@@ -29,7 +29,7 @@
 			Once approved, sign in with <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-fg"
 				>{data.handle}</span
 			>
-			or your full email — either works.
+			or your full email. Either works.
 		{:else}
 			Once approved, come back and sign in with your email.
 		{/if}

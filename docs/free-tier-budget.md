@@ -34,8 +34,8 @@ orders of magnitude of headroom for a single-user application.
 
 | Limit | Ceiling | Typical use | Verdict |
 |---|---|---|---|
-| CPU per request | 10 ms | ~2-3 ms | **Tight — the one to design around** |
-| D1 queries / invocation | 50 | single digits | **Design constraint** |
+| CPU per request | 10 ms | ~1-3 ms | **Tight — the one to design around** |
+| D1 queries / invocation | 50 | 6 (10 with the detail modal open) | **Design constraint** |
 | Requests / day | 100,000 | tens | Large headroom |
 | Rows read / day | 5,000,000 | thousands | Large headroom |
 | Database size | 500 MB | ~1 MB | Large headroom |
@@ -53,15 +53,22 @@ flowchart LR
     subgraph budget["10 ms CPU · 50 D1 queries"]
         direction TB
         A["getDashboardData()"] --> B["4 concurrent queries"]
+        A2["listResumes()"] --> B2["2 queries, same Promise.all"]
         B --> C["computeKpis() — pure, no I/O"]
         B --> D["charts — pure, no I/O"]
     end
     E["9 widgets, 9 queries"] -.->|"rejected"| F["would risk both ceilings"]
 ```
 
+The real figure, so the "one rollup" claim means something: a plain `/dashboard` is **6** queries
+(4 from `getDashboardData` plus 2 from `listResumes`), 7 with `?trash=1`, and 10 with the detail
+modal open — `?app=<id>` adds the application row plus interviews, contacts, and activities. That
+is not single digits and this file should not pretend otherwise. It is comfortably inside 50, and
+it is flat with respect to the number of widgets.
+
 | Decision | Buys |
 |---|---|
-| One rollup instead of a query per widget | Keeps D1 queries in single digits (9 widgets would be 9) |
+| One rollup instead of a query per widget | 6 queries for 9 widgets; adding a widget costs arithmetic, not a round trip. Without it, 9 widgets would be 9 queries plus one for the resume library |
 | The agenda reuses `upcomingInterviews` from that same rollup | The one *prospective* panel costs zero extra queries — it is pure derivation over data already fetched |
 | `STAGE_MOVES_WINDOW_DAYS = 90` | The `activity_event` scan costs the same on day 1 and day 1000 |
 | `session.cookieCache` (5 min, `compact`) | Session reads skip D1 entirely on most requests |

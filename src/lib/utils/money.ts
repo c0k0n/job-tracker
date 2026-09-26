@@ -16,7 +16,7 @@
  */
 
 import type { CurrencyCode, Salary } from '$lib/types';
-import { CURRENCIES, CURRENCY_BY_CODE } from '$lib/constants/currencies';
+import { CURRENCY_BY_CODE } from '$lib/constants/currencies';
 
 export const SALARY_SHAPES = [
 	{ value: 'none', label: 'Not specified' },
@@ -179,11 +179,6 @@ export function parseSalaryFromForm(
 		}
 	}
 	return { salary: null, values, errors };
-}
-
-/** The options a salary currency `<select>` renders. */
-export function currencyOptions(): { code: CurrencyCode; label: string }[] {
-	return CURRENCIES.map((c) => ({ code: c.code, label: `${c.code} — ${c.label}` }));
 }
 
 /**

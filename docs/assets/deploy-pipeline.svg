@@ -15,7 +15,25 @@
 		.p2 { animation: glow 2s ease-in-out infinite .5s; }
 		.p3 { animation: glow 2s ease-in-out infinite 1s; }
 		.p4 { animation: glow 2s ease-in-out infinite 1.5s; }
-	</style>
+	
+		/* Motion is decoration, and the animation is load-bearing in a way
+		   that is easy to miss: these rules use `animation-fill-mode: both`
+		   so before the delay elapses each element sits at its `from`
+		   keyframe. For the slide-in classes that keyframe is `opacity: 0`,
+		   and for the grow classes it is `scaleX(0)` — so wherever animation
+		   does not run (a reduced-motion preference, a renderer that drops
+		   the style element, a static export) the labels and the bars stay
+		   invisible instead of merely unanimated. The end state has to be
+		   the resting state. */
+		@media (prefers-reduced-motion: reduce) {
+			.flowing, .p1, .p2, .p3, .p4
+			{
+				animation: none !important;
+				opacity: 1;
+				transform: none;
+			}
+		}
+</style>
 
 	<rect class="bg" x="0" y="0" width="780" height="170" rx="10"/>
 

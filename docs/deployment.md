@@ -134,15 +134,20 @@ Full reasoning in [docs/auth.md](auth.md#base-url).
 flowchart TD
     A["visit https://job-tracker.sanctum.workers.dev"] --> B["sign up — you are the first user"]
     B --> C["auto-approved as ADMIN"]
+    C --> G["redirected to /?approved=1<br/>then sign in"]
     D["everyone after you"] --> E["/pending-approval"]
-    C --> F["/admin/approvals → approve them"]
+    G --> F["/admin/approvals → approve them"]
     F --> E
 ```
 
 ### Becoming the admin
 
 The **first account ever created** bootstraps as an approved admin — no ceremony. Sign up with your
-own email at the deployed URL and you are done. The check is "does any user with `disabled = false`
+own email at the deployed URL and you are done. The sign-up action reads the row back after
+`signUpEmail` and, seeing `disabled = false`, redirects to `/?approved=1` with a confirmation
+rather than to `/pending-approval` — the person setting the app up should not be told to go and
+approve themselves. `autoSignIn` is off for everyone, so the next step is signing in, and
+`/dashboard` is where `?next=` defaults to. The check is "does any user with `disabled = false`
 exist", so if you ever delete the only admin, the next sign-up bootstraps again.
 
 ### Letting your girlfriend and friends in
@@ -159,8 +164,10 @@ flowchart LR
     A -->|reject| GONE["row deleted"]
 ```
 
-Every user sees **only their own** applications — the data layer filters on `userId` in every
-query, so there is no shared view and no way to reach another account's rows.
+Every user sees **only their own** applications. Every list query and every write filters on
+`userId` in SQL, and the six single-row-by-id reads assert ownership in JS before returning
+anything — so there is no shared view and no way to reach another account's rows. See
+[data-model.md](data-model.md#query-discipline) for the two shapes and why both are safe.
 
 Rejecting deletes the account row, so a mistyped email just means signing up again.
 

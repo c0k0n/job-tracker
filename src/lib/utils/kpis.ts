@@ -15,19 +15,34 @@ import { isThisMonth } from '$lib/utils/dates';
 export { isStageOpen };
 
 /**
+ * Is this row still in play?
+ *
+ * `status` alone is not enough. The form lets stage and status be set
+ * independently, so `stage: 'rejected', status: 'active'` is a perfectly
+ * reachable state — and counting it made the "Active" tile disagree with
+ * its own sublabel ("Across all open stages"). A row is in play only when
+ * its *stage* is open AND its status has not been closed out.
+ *
+ * Shared with the dashboard's stale banner so the KPI strip and the
+ * "N applications need your attention" alert can never disagree.
+ */
+export function isInPlay(app: Application): boolean {
+	return isStageOpen(app.stage) && app.status !== 'closed';
+}
+
+/**
  * Compute all KPI counts in a single pass.
  *
  * Matches the 5 KPI cards in the dashboard strip:
- *   - active:          rows where status is active / stalled / ghosted / paused
- *   - interviews:      pending interviews scheduled in the next 30 days
- *                      (from the interviews side table — nextActionAt is a
- *                      generic follow-up, not an interview)
- *   - offersPending:   rows in stage === 'offer'
+ *   - active:          rows still in play (see `isInPlay`)
+ *   - interviews:      pending interviews scheduled between now and +30 days
+ *   - offersPending:   rows at stage `offer` and still in play
  *   - appliedMonth:    rows where appliedAt is in the current calendar month
- *   - needsAttention:  rows where status is stalled or ghosted
+ *   - needsAttention:  in-play rows where status is stalled or ghosted
  *
- * Closed-only rows (rejected, withdrawn, accepted) are excluded from
- * everything except `offersPending` (a non-terminal stage).
+ * Terminal-stage rows (rejected, withdrawn, accepted) are excluded from
+ * every count, because none of the five questions is about them: they are
+ * not active, not awaiting a decision, and not a follow-up candidate.
  */
 export function computeKpis(
 	apps: readonly Application[],
@@ -39,25 +54,30 @@ export function computeKpis(
 	let needsAttention = 0;
 
 	for (const app of apps) {
-		if (app.status !== 'closed') {
+		if (isInPlay(app)) {
 			active += 1;
-			if (isStageOpen(app.stage) && app.stage === 'offer') {
-				offersPending += 1;
-			}
+			if (app.stage === 'offer') offersPending += 1;
+			if (app.status === 'stalled' || app.status === 'ghosted') needsAttention += 1;
 		}
-		if (isThisMonth(app.appliedAt)) {
-			appliedThisMonth += 1;
-		}
-		if (app.status === 'stalled' || app.status === 'ghosted') {
-			needsAttention += 1;
-		}
+		// Deliberately outside the isInPlay branch: "applied this month" is
+		// a fact about when you pressed apply, and it stays true after the
+		// application is rejected. Counting it only while in play would make
+		// the tile drop the moment a month closed badly, which is exactly
+		// the number you want to keep looking at.
+		if (isThisMonth(app.appliedAt)) appliedThisMonth += 1;
 	}
 
-	const cutoff = Date.now() + 30 * 24 * 60 * 60 * 1000;
+	// "Next 30 days" is a window, not a horizon: an interview that already
+	// happened is not in the next 30 days, however pending its outcome is.
+	// The dashboard's rollup only hands us interviews from the last 24h
+	// onwards, but this function is pure and must hold on its own — an
+	// interview left pending from last month would otherwise be counted.
+	const now = Date.now();
+	const cutoff = now + 30 * 24 * 60 * 60 * 1000;
 	const interviewsNext30Days = interviews.filter((iv) => {
 		if (iv.outcome !== null && iv.outcome !== 'pending') return false;
 		const t = new Date(iv.scheduledAt).getTime();
-		return !Number.isNaN(t) && t <= cutoff;
+		return Number.isFinite(t) && t >= now && t <= cutoff;
 	}).length;
 
 	return {

@@ -259,7 +259,7 @@
 		</div>
 
 		<p class="mt-2 text-xs text-muted">
-			Hover any day for its dates. A "stage move" is a promotion after the day you applied — it
+			Hover any day for its dates. A "stage move" is a promotion after the day you applied. It
 			measures momentum, not just new applications.
 		</p>
 	</div>

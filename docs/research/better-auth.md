@@ -1,7 +1,7 @@
 # Better Auth 1.7 — research notes
 
 > Sources: Better Auth MCP (`/llms.txt`, v1.7 latest, plus `/docs/integrations/svelte-kit`, `/docs/concepts/{api,session-management,email-password,oauth,database,plugins,rate-limit,email,hooks,client,cookies,cli,typescript,users-accounts}`, `/docs/plugins/{2fa,organization,admin}`, `/docs/reference/options`, `/docs/adapters/drizzle`).
-> Mapped 2026-09-04. **Installed**: `better-auth` + `@better-auth/drizzle-adapter` `^1.7.5` (both `devDependencies` — they are bundled into the Worker at build time, so they do not need to be runtime deps). Where this file says "for a fresh project", read it as the shape the repo already follows; see `docs/architecture.md` for what the repo actually ships.
+> Mapped 2026-09-04. **Installed**: `better-auth` + `@better-auth/drizzle-adapter` `^1.7.5` (both `devDependencies` — they are bundled into the Worker at build time, so they do not need to be runtime deps). Where this file says "for a fresh project", read it as the shape the repo already follows **except where a later section says otherwise** — several sections record where the repo deliberately diverges, and those notes win. See `docs/architecture.md` for what the repo actually ships.
 
 ## Versions & how to choose
 
@@ -101,6 +101,19 @@ export const auth = betterAuth({
 
 > On Cloudflare Workers, `process.env` reads at build time — for runtime secrets use the `env` binding. `worker-configuration.d.ts` declares `Env`. To get them, expose a `secret` accessor that reads `request.platform.env`. The cleanest path: import `env` from `cloudflare:workers` and reference `env.BETTER_AUTH_SECRET` inside `betterAuth({...})` — but `betterAuth()` is called at module init, not per request, so the standard pattern is to pass a getter or wrap behind a per-request handler. See SvelteKit integration below for the recommended pattern.
 
+> **This sample is the vendor's shape, not this repo's.** Four lines in it are the opposite of
+> what `src/lib/server/auth.ts` does, and copying any of them back would undo a decision this
+> repo made on purpose:
+>
+> | Sample line | This repo | Why it differs |
+> |---|---|---|
+> | `export const auth = betterAuth({...})` at module init | `getAuth()` builds per request | Env bindings do not exist at module init on Workers. |
+> | `baseURL: process.env.BETTER_AUTH_URL` | `{ allowedHosts, protocol: 'auto' }` | A pinned `baseURL` costs the "one build everywhere" property. See [Base URL](../auth.md#base-url). |
+> | `trustedOrigins: [..., 'http://localhost:5173']` | `trustedOrigins: extraOrigins` (from `DEV_ORIGINS`, empty in prod) | Better Auth's own docs: "Do not leave the localhost origin in a trusted origins list of a production auth instance." |
+> | `autoSignIn: true` | `autoSignIn: false` | Sign-ups must not receive a session, or every guarded route has to bounce an unapproved user around. |
+>
+> The `session`, `advanced`, and `rateLimit` blocks in the sample are accurate and match the repo.
+
 ## Drizzle adapter specifics
 
 ```ts
@@ -143,7 +156,14 @@ You must define the four core tables yourself (or use `bunx auth generate --adap
   expiresAt: integer NOT NULL, createdAt: integer, updatedAt: integer }
 ```
 
-> The newer `account.identityStrategy` setting changes what `issuer` is stored; Better Auth v1.7 keeps the **provider-id** namespace by default for new projects (`account: { identityStrategy: 'provider-id' }` → `local:oauth:<encoded providerId>`). If you skip setting it, you get a one-time warning and v1.7 compatibility mode that stores the verified authority. Existing populated 1.6 data needs an explicit choice.
+> **CORRECTION (checked against the installed `better-auth@1.7.5`):** there is **no**
+> `account.identityStrategy` option and **no** `issuer` column in this version. Grepping every
+> `.mjs` and `.d.mts` under `node_modules/better-auth` and `node_modules/@better-auth` for
+> `identityStrategy` returns zero hits. An earlier draft of this file claimed the setting existed
+> and described its two values; that was wrong, and following it would send you looking for a
+> config key that is not there. The `account` table is exactly the block above: `providerId` +
+> `accountId`, unique together. `docs/research/drizzle.md` propagated the same error into its
+> `uniqIssuerAccount` recipe; both are corrected.
 
 ### Adapter Drizzle relations v2 (Drizzle v1.x)
 
@@ -157,7 +177,7 @@ Generated relations use `defineRelationsPart` and must be spread **after** your 
 
 ### Joins
 
-Set `advanced.database.joins: true` for the Drizzle adapter to use joined queries (e.g. `/get-session`, `/get-full-organization`). Requires your Drizzle schema to declare the `relations()` correctly. **2-3x faster** for endpoints that need related rows. Drizzle's CLI `bunx auth generate` (latest) auto-emits the right relations.
+Set `advanced.database.joins: true` for the Drizzle adapter to use joined queries (e.g. `/get-session`, `/get-full-organization`). Requires your Drizzle schema to declare the `relations()` correctly. The vendor describes this as faster for endpoints that need related rows but publishes no benchmark; treat the exact multiplier as unverified. Drizzle's CLI `bunx auth generate` (latest) auto-emits the right relations.
 
 ### Programmatic migrations (no CLI access — Cloudflare D1)
 
@@ -342,10 +362,9 @@ Hooks (`ctx`, all in `auth.api.signInEmail` etc.):
 - `validateUserInfo` — central policy gate (create-user, link-account, sign-in for OAuth/SSO).
 - `additionalData` is **client-supplied** in OAuth state; use `addOAuthServerContext` (server hook) for trusted values.
 - Placeholder emails (Apple, Discord, etc. without a real email): use `mapProfileToUser` to set a `.invalid` placeholder. Plugins that email (password reset, magic link, org invites) cannot deliver there — use your own domain if you need delivery.
-- `account.identityStrategy`:
-  - `provider-id` (default for new projects): `local:oauth:<encoded providerId>` for OAuth, `local:credential` for credential.
-  - `issuer`: stores the verified OIDC issuer authority.
-  - Both strategies use the same `(issuer, accountId)` unique index and `id` PK. Changing strategy on populated data = account re-key migration, not a config-only toggle.
+- ~~`account.identityStrategy`~~ — **does not exist in 1.7.5.** See the correction note in the
+  schema section above. The account identity namespace is `providerId` + `accountId`, unique
+  together, full stop.
 - `account.storeAccountCookie: true` (default in stateless setups) — provider account data in encrypted `account_data` cookie. Forward `Set-Cookie` from `getAccessToken`/`refreshToken` server responses.
 - `account.storeStateStrategy`:
   - `database` (default if a db or secondary storage is configured) — write state in verification table, set signed state cookie.
@@ -405,7 +424,7 @@ Built-in special rules (`dist/api/rate-limiter/index.mjs → getDefaultSpecialRu
 | Path prefix | Window | Max |
 |---|---|---|
 | `/sign-in`, `/sign-up`, `/change-password`, `/change-email` | 10 s | 3 |
-| `/request-password-reset`, `/send-verification-email`, `/forget-password`, `/email-otp/*` | 60 s | 3 |
+| `/request-password-reset`, `/send-verification-email`, `/forget-password`, `/email-otp/send-verification-otp`, `/email-otp/request-password-reset` | 60 s | 3 |
 | `/two-factor/*` (from the 2FA plugin) | 10 s | 3 |
 
 This repo overrides the global rule to `window: 60, max: 100, storage: 'database'` (see `src/lib/server/auth.ts`); the per-path rules above still win.
@@ -506,8 +525,19 @@ The cleanest pattern for the SvelteKit on Cloudflare combo: define a request-lev
 >   USER_ALREADY_EXISTS — so routes that want a friendly "already has an
 >   account" error must pre-check the email themselves (see
 >   src/routes/+page.server.ts).
-> 3. Sign-in still hands disabled users a session unless gated earlier;
->   the approval gate must be checked BEFORE calling signInEmail.
+> 3. Sign-in DOES hand a disabled user a session — Better Auth has no
+>   concept of a `disabled` flag, it only knows the `banned` field the
+>   `admin()` plugin adds. So *something* has to revoke it. This repo does
+>   that AFTER the password verifies, not before:
+>     1. `signInEmail` runs (a disabled user now holds a session).
+>     2. If `user.disabled`, `signOut` immediately and fail with 403.
+>     3. `hooks.server.ts` revokes any disabled user's session on every
+>        request regardless, as a second backstop.
+>   Checking `disabled` BEFORE `signInEmail` also works, and was the
+>   original implementation here — but it turns the sign-in form into an
+>   account-existence oracle ("waiting for approval" vs "incorrect"
+>   answers whether an email has an account, with no password required).
+>   Post-password is the correct order. Do not move it back.
 
 ## Schema source-of-truth recommendation
 

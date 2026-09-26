@@ -50,7 +50,7 @@ flowchart LR
 | Max row size | 2 MB | 2 MB | Job descriptions are ~10 kB. |
 | Max statement length | 100 kB | 100 kB | Drizzle batches inserts. |
 | Time Travel / backup | 7 days | 30 days | Rollback window. |
-| Simultaneous connections / invocation | 6 | 6 | — |
+| Simultaneous connections / invocation | 6 | 6 | A *separate* budget from the Workers row above, not the same one — D1 caps concurrent queries per invocation, Workers caps `fetch` fan-out. Both happen to be 6. |
 
 For which of these actually bind this app, and what the code does about each, see [free-tier-budget.md](../free-tier-budget.md).
 
@@ -127,7 +127,7 @@ fallback are shown for reference and are deliberately not in `wrangler.jsonc`.
 }
 ```
 
-`.assetsignore` file (next to `wrangler.jsonc`) prevents the built worker JS from being served as a static asset:
+`.assetsignore` file — in this repo at `static/.assetsignore`, i.e. inside the assets directory that `wrangler.jsonc` points `assets.directory` at, not next to `wrangler.jsonc` — prevents the built worker JS from being served as a static asset:
 
 ```
 _worker.js
@@ -402,7 +402,7 @@ install if you would rather run your own.
 - **No `node:*` unless `nodejs_compat` is on**: importing `node:fs` or `node:crypto` fails at runtime without it. `nodejs_als` is *not* a substitute — it polyfills `AsyncLocalStorage` only, not the `node:` built-ins. Better Auth reaches for `node:async_hooks` (dynamic `import()` with a `.catch()` that falls back to `globalThis.AsyncLocalStorage`, so it degrades rather than crashes) and hashes passwords through `@better-auth/utils/password`, which picks `node:crypto` scrypt only under the `node` export condition and otherwise falls back to pure-JS `@noble/hashes`. So it runs either way, but `nodejs_compat` is the documented and safer setting.
 - **Cookie `Secure` flag**: only set automatically in production. For preview URLs (`*.workers.dev`), use HTTPS — they are.
 - **Bundle size**: the Worker script limit is **64 MiB** (raised from the old 1 MiB / 10 MiB tiers — see [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)). Not a practical concern here: the built server bundle is well under it, with `auth.js` (~418 kB) the largest chunk. CSS is served as a static asset, so it never counts against the script size.
-- **`adapter-cloudflare` + remote functions**: `experimental.remoteFunctions: true` must be in `svelte.config.js` (or vite plugin) AND the `compileOptions.experimental.async: true` flag. Plus the `[compilation] section in wrangler.jsonc]` is not needed — adapter handles it.
+- **`adapter-cloudflare` + remote functions**: `experimental.remoteFunctions: true` must be set in the SvelteKit plugin options AND the `compileOptions.experimental.async: true` flag. A `[compilation]` section in `wrangler.jsonc` is not needed — the adapter handles it. (This repo has no `svelte.config.js` at all; SvelteKit config lives in `vite.config.ts` via `sveltekit({...})`, so the option belongs there.)
 
 ## What the job-tracker needs (decision sheet)
 

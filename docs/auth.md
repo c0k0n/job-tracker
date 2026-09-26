@@ -90,10 +90,17 @@ repo therefore passes `headers`:
 await auth.api.signInEmail({ headers: request.headers, body: { email, password } });
 ```
 
-That applies to `signInEmail` and `signUpEmail` in `src/routes/+page.server.ts`, and to the three
-calls that already took headers (`getSession` and `signOut` in `hooks.server.ts`, `signOut` in the
-dashboard action). If you add another `auth.api` call, pass `headers` or it will fail at runtime
-rather than at typecheck.
+Six calls in this repo pass `headers`, and any new one must too or it will fail at runtime rather
+than at typecheck:
+
+| Call | Where |
+|---|---|
+| `getSession` | `hooks.server.ts` |
+| `signOut` (self-heal) | `hooks.server.ts` |
+| `signUpEmail` | `+page.server.ts` |
+| `signInEmail` | `+page.server.ts` |
+| `signOut` (approval gate) | `+page.server.ts` |
+| `signOut` (dashboard action) | `dashboard/+page.server.ts` |
 
 ## The four gates
 
@@ -103,23 +110,42 @@ flowchart TD
     G1 -- no --> L["landing page<br/>sign in / sign up"]
     G1 -- yes --> G2{"user.disabled?"}
     G2 -- yes --> H["signOut() — self-heal"] --> L
-    G2 -- no --> G3{"role === 'admin'?"}
-    G3 -- no --> D["/dashboard"]
-    G3 -- yes --> D
-    D --> G4{"admin route?"}
-    G4 -- yes --> G3
+    G2 -- no --> D["/dashboard"]
+    D --> G3{"admin route?"}
+    G3 -- yes --> G4{"role === 'admin'?"}
+    G4 -- no --> D
 ```
 
+Gates 3 and 4 are the same check at two layers: `hooks.server.ts` runs on every request, and
+`/admin/approvals` re-checks in its own `load` because `locals` is a convenience, not an
+authorisation boundary.
+
 1. **Sign-up** — creates the row with `disabled: true` and issues **no session**. The user lands
-   on `/pending-approval`.
-2. **Sign-in** — `src/routes/+page.server.ts` looks the user up *before* calling `signInEmail` and
-   refuses if `disabled`. This pre-check is required: Better Auth happily hands a session to a
-   disabled user once the password verifies.
+   on `/pending-approval`. The one exception is the bootstrap admin: the action reads the row back
+   after `signUpEmail` and, if the hook approved it, redirects to `/?approved=1` instead. There is
+   nobody to wait for in that case, and telling the person setting the app up to go and approve
+   themselves was nonsense.
+2. **Sign-in** — `src/routes/+page.server.ts` calls `signInEmail` **first** and only then checks
+   `disabled`, revoking the session it just created if the flag is set.
+
+   The order is deliberate and was inverted on purpose. Checking `disabled` *before* verifying the
+   password made the form an account-existence oracle: send an email, read whether you got
+   "this account is waiting for approval" or "incorrect", and you have enumerated the user list
+   without guessing anything. Verifying first means only the account's owner can ever reach that
+   message.
+
+   The cost is that an unapproved account briefly holds a real session. It is revoked on the spot,
+   and gate 3 below revokes any disabled user's session on every request regardless — so even if
+   that sign-out failed, the account still cannot reach a guarded route. Two independent backstops
+   for one condition.
 3. **`hooks.server.ts`** — if a session resolves to a `disabled` user, the session is revoked on
-   the spot. This only ever fires for a legacy cookie from before `autoSignIn` was switched off,
-   and it exists so those users get signed out cleanly instead of bouncing between redirects.
+   the spot. It fires for the sign-in case above when the route-level revoke failed, and for a
+   legacy cookie from before `autoSignIn` was switched off. Either way the user ends up cleanly
+   signed out instead of bouncing between redirects.
 4. **Admin routes** — `/admin/approvals` re-checks `role` in its own `load`, because `locals` is a
    convenience, not an authorisation boundary.
+
+**Do not "optimise" gate 2 back into a pre-check.** It looks tidier and it is an information leak.
 
 ## Bootstrap
 
@@ -132,6 +158,9 @@ flowchart LR
 
 The check is `disabled = false`, not "does any user exist". If you delete the only approved admin,
 the next sign-up bootstraps again rather than leaving the install permanently unlocked.
+
+The bootstrapped user is redirected to `/?approved=1`, not `/pending-approval` — see gate 1 above.
+They still have to sign in, because `autoSignIn` is off for everyone.
 
 ## Anti-enumeration, and the price of it
 
