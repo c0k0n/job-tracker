@@ -125,6 +125,26 @@ does not work, and reading filters back out of `page.url` gives a stale value. T
 against `window.location` (the native URL), not `page.url`, precisely because the latter is frozen
 between real navigations.
 
+**The URL writer must not run during hydration, and must compare canonicalised.** Both halves of
+that are load-bearing, and the failure is quiet:
+
+- `replaceState` throws `Cannot call replaceState(...) before router is initialized` if the router
+  has not started yet, and the first `$effect` flush happens during hydration — before it has.
+- The effect skips its first run for exactly that reason. Nothing is lost: on the first run the URL
+  is by definition what local state was hydrated *from*, so writing it back is a no-op. Unknown
+  params (`?utm_source=…`) survive until the next real change and are stripped then.
+- The comparison runs both sides through `canonicalSearch()`. `URLSearchParams.toString()`
+  percent-encodes a comma inside a value, so the filter this app emits is `stage=onsite%2Coffer`
+  while a shared or hand-typed link is `stage=onsite,offer` — the same filter, a different string.
+  A byte comparison called those different and rewrote the URL on every load, which is what pushed
+  the write into hydration. Sorting the entries covers the same class of problem for key order.
+
+The symptom was worth recording because the page still *looked* right: the throw happens inside the
+effect, not the load, so the table was filtered correctly and the console was the only evidence.
+A second, quieter bug rode along with it — on a comma URL the filter chips rendered *unpressed*
+while the table was correctly filtered, so the bar and the rows disagreed about the active state.
+Both symptoms came from the one mismatched comparison.
+
 **The same trap catches `onRowClick`, and it is the one that bites users.** Opening the detail modal
 is a `goto`, so it has to build a target URL — and building it from `page.url.searchParams` silently
 threw away everything the user had changed since the last real navigation:

@@ -152,6 +152,29 @@
 		return new URLSearchParams(window.location.search);
 	}
 
+	/**
+	 * Canonical form of a query string, so "is the URL already what I would
+	 * write?" can be answered without comparing raw bytes.
+	 *
+	 * Two things make a raw string compare wrong:
+	 *
+	 * 1. **Encoding.** `URLSearchParams.toString()` percent-encodes a comma
+	 *    inside a value, so a filter that arrived shared or hand-typed
+	 *    (`?stage=onsite,offer`) is the same filter as the one we emit
+	 *    (`?stage=onsite%2Coffer`) but a different string.
+	 * 2. **Order.** The serializer emits keys in a fixed order; a URL that
+	 *    arrived in another order (`?stage=onsite&q=acme`) is the same state.
+	 *
+	 * Round-tripping through `URLSearchParams` normalises the encoding, and
+	 * sorting the entries normalises the order.
+	 */
+	function canonicalSearch(search: string): string {
+		return [...new URLSearchParams(search).entries()]
+			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+			.map(([key, value]) => `${key}=${value}`)
+			.join('&');
+	}
+
 	function onRowClick(app: Application) {
 		// goto (real navigation): the detail bundle must be fetched by the
 		// server load (?app=), and page.url updates — which the hydrate
@@ -210,6 +233,27 @@
 	// NATIVE url) — pageStore.url is frozen between real navigations
 	// (replaceState doesn't update it), so comparing against it would
 	// silently skip legit writes like stripping ?new= on close.
+	//
+	// The comparison is canonical (see canonicalSearch) and the first run is
+	// skipped. Both matter:
+	//
+	// - Skipping the first run is what keeps this legal. `replaceState`
+	//   throws "before router is initialized" if the router has not started
+	//   yet, and the first effect flush happens during hydration — before it
+	//   has. On a hand-typed or shared `?stage=onsite,offer` the byte
+	//   comparison below used to fail (we emit `stage=onsite%2Coffer`), so
+	//   the effect fired during hydration and threw. The page still rendered
+	//   — the throw is inside the effect, not the load — which is exactly why
+	//   it went unnoticed: the table was filtered correctly and the console
+	//   was the only evidence. Canonicalising the comparison removes the
+	//   mismatch at the source; skipping the first run removes the class of
+	//   bug, so the next encoding difference cannot bring it back.
+	// - Nothing is lost by skipping. On the first run the URL is by
+	//   definition the thing local state was hydrated *from*, so writing it
+	//   back is a no-op. Unknown params (?utm_source=…) survive until the
+	//   next real change and are stripped then.
+	let urlWriterPrimed = false;
+
 	$effect(() => {
 		const sp = serializeFiltersToUrl(filters, sort);
 		if (data.trashView) sp.set('trash', '1');
@@ -217,12 +261,17 @@
 		if (newAppOpen) sp.set('new', '1');
 		if (resumeOpen) sp.set('resume', '1');
 		const qs = sp.toString();
-		const target = resolvePath(qs ? `/dashboard?${qs}` : '/dashboard');
+
+		if (!urlWriterPrimed) {
+			urlWriterPrimed = true;
+			return;
+		}
+
 		if (
 			typeof window !== 'undefined' &&
-			target !== window.location.pathname + window.location.search
+			canonicalSearch(qs) !== canonicalSearch(window.location.search)
 		) {
-			replaceState(target, {
+			replaceState(resolvePath(qs ? `/dashboard?${qs}` : '/dashboard'), {
 				detailId: detailOpen ? (detailId ?? undefined) : undefined,
 				newApp: newAppOpen || undefined,
 				resumeLibrary: resumeOpen || undefined
